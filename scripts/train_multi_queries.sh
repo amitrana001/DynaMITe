@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=3
 #SBATCH --mem=50G
 #SBATCH --time=4-00:00:00
-#SBATCH --output=./output/multi_queries/mq_%A.out
+#SBATCH --output=./output/mq_base/mq_%A.out
 
 export PYTHONPATH=.:$PYTHONPATH
 . /home/qn313466/anaconda/etc/profile.d/conda.sh
