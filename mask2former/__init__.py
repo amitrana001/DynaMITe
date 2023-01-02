@@ -40,12 +40,13 @@ from .data.dataset_mappers.mask_former_semantic_dataset_mapper import (
 
 
 # models
-from .maskformer_model import MaskFormer
-from .iterative_maskformer_model import IterativeMaskFormer
-from .new_iterative_maskformer_model import NewIterativeMaskFormer
+# from .maskformer_model import MaskFormer
+# from .iterative_maskformer_model import IterativeMaskFormer
+# from .new_iterative_maskformer_model import NewIterativeMaskFormer
 from .test_time_augmentation import SemanticSegmentorWithTTA
 from .iterative_m2f_model import IterativeMask2Former
+from .iterative_m2f_mq_model import IterativeMask2FormerMQ
 
 # evaluation
-from .evaluation.instance_evaluation import InstanceSegEvaluator
-from .evaluation.num_clicks_eval import get_avg_noc
+# from .evaluation.instance_evaluation import InstanceSegEvaluator
+# from .evaluation.num_clicks_eval import get_avg_noc

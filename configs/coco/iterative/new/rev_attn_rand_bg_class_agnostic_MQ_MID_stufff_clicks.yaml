@@ -1,8 +1,8 @@
 _BASE_: Base-COCO-IterativeSegmentation.yaml
 MODEL:
-  META_ARCHITECTURE: "IterativeMask2Former"
+  META_ARCHITECTURE: "IterativeMask2FormerMQ"
   SEM_SEG_HEAD:
-    NAME: "IterativeM2FHead"
+    NAME: "IterativeM2FHeadMQ"
     IGNORE_VALUE: 255
     NUM_CLASSES: 80
     LOSS_WEIGHT: 1.0
@@ -16,7 +16,7 @@ MODEL:
     COMMON_STRIDE: 4
     TRANSFORMER_ENC_LAYERS: 6
   MASK_FORMER:
-    TRANSFORMER_DECODER_NAME: "IterativeM2FTransformerDecoder"
+    TRANSFORMER_DECODER_NAME: "IterativeM2FTransformerDecoderMQ"
     TRANSFORMER_IN_FEATURE: "multi_scale_pixel_decoder"
     QUERY_INITIALIZER: "multi_scale" # OR single_scale
     DEEP_SUPERVISION: True
@@ -43,6 +43,9 @@ MODEL:
       PANOPTIC_ON: False
       OVERLAP_THRESHOLD: 0.8
       OBJECT_MASK_THRESHOLD: 0.8
+DATASETS:
+  TRAIN: ("coco_2017_train_panoptic",)
+  TEST: ("GrabCut",)
 INPUT:
   IMAGE_SIZE: 512 #1024
   MIN_AREA_FOR_MASK: 400.0

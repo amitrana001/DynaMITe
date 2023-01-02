@@ -196,7 +196,11 @@ class COCOMultiInstStuffMultiQueriesClicksDatasetMapper:
             # mask = torch.from_numpy(np.ascontiguousarray(masks[indx[0]].copy())).to(dtype=torch.uint8).unsqueeze(0)
             
             # new_gt_masks = masks.unsqueeze(0)
-            fg_masks, bg_masks, num_scrbs_per_mask= gen_multi_points_per_mask(masks.tensor, all_masks=all_masks)
+            points_masks = gen_multi_points_per_mask(masks.tensor, all_masks=all_masks)
+            if points_masks is None:
+                return None
+            else:
+                fg_masks, bg_masks, num_scrbs_per_mask= points_masks
             dataset_dict["fg_scrbs"] = fg_masks
                 # only_bg_mask =  get_scribble_gt_mask(np.asarray(all_masks).astype(np.uint8)*255, bg = True)
                 
@@ -206,12 +210,12 @@ class COCOMultiInstStuffMultiQueriesClicksDatasetMapper:
             assert len(num_scrbs_per_mask) == instances.gt_masks.shape[0]
             if self.random_bg_queries:
                 pick = np.random.rand()
-                # if pick < 0.20:
-                #     dataset_dict["bg_scrbs"] = None
+                if pick < 0.20:
+                    dataset_dict["bg_scrbs"] = None
             if dataset_dict['bg_scrbs'] is None:
-                dataset_dict["scrbs_count"] = dataset_dict["fg_scrbs"].shape[0]
+                dataset_dict["scrbs_count"] = len(dataset_dict["fg_scrbs"])
             else:
-                dataset_dict["scrbs_count"] = dataset_dict["fg_scrbs"].shape[0] + dataset_dict["bg_scrbs"].shape[0]
+                dataset_dict["scrbs_count"] = len(dataset_dict["fg_scrbs"]) + len(dataset_dict["bg_scrbs"])
         dataset_dict["instances"] = instances
 
         return dataset_dict

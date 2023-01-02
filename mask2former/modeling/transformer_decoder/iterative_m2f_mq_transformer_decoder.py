@@ -15,10 +15,10 @@ from detectron2.config import configurable
 from detectron2.layers import Conv2d
 from einops import repeat
 from .position_encoding import PositionEmbeddingSine
+from detectron2.modeling.postprocessing import sem_seg_postprocess
 from .maskformer_transformer_decoder import TRANSFORMER_DECODER_REGISTRY
 from .descriptor_initializer import AvgPoolingInitializer
-from mask2former.utils import get_new_scribbles_opt, preprocess_batch_data, get_new_points
-
+from mask2former.utils import get_new_scribbles_opt, preprocess_batch_data, get_new_points_mq
 class SelfAttentionLayer(nn.Module):
 
     def __init__(self, d_model, nhead, dropout=0.0,
@@ -482,6 +482,7 @@ class IterativeM2FTransformerDecoderMQ(nn.Module):
             if self.accumulate_loss:
                 prev_output = None
                 num_iters = random.randint(0,self.max_num_interactions)
+                # num_iters=0
                 
                 for _ in range(num_iters):
                     prev_output = self.iterative_batch_forward(x, src, pos, size_list, mask_features, scribbles, prev_mask_logits,batched_num_scrbs_per_mask)
@@ -489,7 +490,7 @@ class IterativeM2FTransformerDecoderMQ(nn.Module):
                     # print("before:",batched_num_scrbs_per_mask)
                     processed_results = self.process_results(data, images, prev_output, num_instances, batched_num_scrbs_per_mask)
                     if self.use_point_clicks:
-                        scribbles, batched_num_scrbs_per_mask = get_new_points(data, processed_results, scribbles,
+                        scribbles, batched_num_scrbs_per_mask = get_new_points_mq(data, processed_results, scribbles,
                                                                               random_bg_queries=self.random_bg_queries,
                                                                               batched_num_scrbs_per_mask = batched_num_scrbs_per_mask)
                     else:
@@ -532,18 +533,6 @@ class IterativeM2FTransformerDecoderMQ(nn.Module):
 
         _, bs, _ = src[0].shape
         # num_scrbs = scribbles.shape[1]
-
-        # if scribbles is None:    
-        #     # QxNxC
-        #     query_embed = self.query_embed.weight.unsqueeze(1).repeat(1, bs, 1)
-        #     output = self.query_feat.weight.unsqueeze(1).repeat(1, bs, 1)    
-        # else:
-        # fg_scrbs, bg_scrbs = scribbles
-        # scribbles_resized = F.interpolate(scribbles, size=size_list[-1], mode="bilinear", align_corners=False)
-        
-        #In_channels == 256 == C == hidden_dim so output will be C dimesional for each scribble
-        # NxQxC to QxNxC
-        # output = self.query_initializer(x[-1], scribbles_resized).permute(1,0,2)
         if self.random_bg_queries:
             if batched_num_scrbs_per_mask is not None:
                 new_scribbles = []
@@ -552,16 +541,17 @@ class IterativeM2FTransformerDecoderMQ(nn.Module):
                         new_scribbles.append(torch.cat(scrbs))
                     else:
                         new_scribbles.append(torch.cat(scrbs[:-1]))
-                scribbles = new_scribbles
-            max_scrbs_batch = max([scrbs.shape[0] for scrbs in scribbles]) + self.num_static_bg_queries
-            descriptors = self.query_descriptors_initializer(x, scribbles, random_bg_queries=self.random_bg_queries)
+                # scribbles = new_scribbles
+            max_scrbs_batch = max([scrbs.shape[0] for scrbs in new_scribbles]) + self.num_static_bg_queries
+            descriptors = self.query_descriptors_initializer(x, new_scribbles, random_bg_queries=self.random_bg_queries )
             for i, desc in enumerate(descriptors):
                 bg_queries = repeat(self.bg_query, "C -> 1 L C", L=max_scrbs_batch-desc.shape[1])
+                # bg_queries = repeat(self.bg_query, "C -> 1 L C", L=self.num_static_bg_queries)
                 descriptors[i] = torch.cat((descriptors[i], bg_queries), dim=1)
             output = torch.cat(descriptors, dim=0)
             # print(output.shape)
         else:
-            output = self.query_descriptors_initializer(x,scribbles)
+            output = self.query_descriptors_initializer(x,new_scribbles)
         
         # num_scrbs = output.shape[0]
         Bs, num_scrbs, _ = output.shape
@@ -760,6 +750,11 @@ class IterativeM2FTransformerDecoderMQ(nn.Module):
             width = input_per_image.get("width", image_size[1])
             processed_results.append({})
 
+            # mask_pred_result = retry_if_cuda_oom(sem_seg_postprocess)(
+            #         mask_pred_result, image_size, height, width
+            #     )
+            # if mask_cls_result is not None:
+            #     mask_cls_result = mask_cls_result.to(mask_pred_result)
             # if self.instance_on:
             # print(num_scrbs_per_mask)
             instance_r = retry_if_cuda_oom(self.interactive_instance_inference)(mask_cls_result, mask_pred_result,
@@ -784,9 +779,10 @@ class IterativeM2FTransformerDecoderMQ(nn.Module):
         # print(mask_pred.shape)
         temp_out = []
         splited_masks = torch.split(mask_pred, num_scrbs_per_mask_copy, dim=0)
-        for m in splited_masks[:-1]:
+        for m in splited_masks:
             temp_out.append(torch.max(m, dim=0).values)
-        mask_pred = torch.cat([torch.stack(temp_out),splited_masks[-1]])
+        # mask_pred = torch.cat([torch.stack(temp_out),splited_masks[-1]])
+        mask_pred = torch.stack(temp_out)
 
         # mask (before sigmoid)
         mask_pred = mask_pred[:num_instances]
@@ -801,9 +797,10 @@ class IterativeM2FTransformerDecoderMQ(nn.Module):
             # [Q, K+1] -> [fg, K]
             temp_out = []
             splited_scores = torch.split(mask_cls, num_scrbs_per_mask_copy, dim=0)
-            for m in splited_scores[:-1]:
+            for m in splited_scores:
                 temp_out.append(torch.max(m, dim=0).values)
-            mask_cls = torch.cat([torch.stack(temp_out),splited_scores[-1]])
+            # mask_cls = torch.cat([torch.stack(temp_out),splited_scores[-1]])
+            mask_cls = torch.stack(temp_out)
 
             scores = F.softmax(mask_cls, dim=-1)[:num_instances, :-1]
             labels_per_image = scores.argmax(dim=1)

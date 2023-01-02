@@ -14,7 +14,7 @@ from detectron2.modeling.postprocessing import sem_seg_postprocess
 from detectron2.structures import Boxes, ImageList, Instances, BitMasks
 from detectron2.utils.memory import retry_if_cuda_oom
 
-from mask2former.evaluation import iterative_evaluator
+# from mask2former.evaluation import iterative_evaluator
 
 from .modeling.new_criterion import SetNewCriterion
 from .modeling.matcher import HungarianMatcher

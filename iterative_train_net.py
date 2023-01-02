@@ -32,18 +32,8 @@ from detectron2.engine import (
     default_setup,
     launch,
 )
-from mask2former.evaluation.clicks_evaluation import get_avg_noc
+from mask2former.evaluation.single_instance_evaluation import get_avg_noc
 
-from detectron2.evaluation import (
-    CityscapesInstanceEvaluator,
-    CityscapesSemSegEvaluator,
-    COCOEvaluator,
-    COCOPanopticEvaluator,
-    DatasetEvaluators,
-    LVISEvaluator,
-    SemSegEvaluator,
-    verify_results,
-)
 from detectron2.projects.deeplab import add_deeplab_config, build_lr_scheduler
 from detectron2.solver.build import maybe_add_gradient_clipping
 from detectron2.utils.logger import setup_logger
@@ -54,7 +44,7 @@ from detectron2.evaluation import (
     verify_results,
 )
 
-from mask2former.evaluation.iterative_evaluator import iterative_inference_on_dataset
+# from mask2former.evaluation.iterative_evaluator import iterative_inference_on_dataset
 # MaskFormer
 from mask2former import (
     COCOSingleInstClicksDatasetMapper,
@@ -62,6 +52,7 @@ from mask2former import (
     COCOAllInstClicksDatasetMapper,
     COCOMultiInstClicksDatasetMapper,
     COCOMultiInstStuffClicksDatasetMapper,
+    COCOMultiInstStuffMultiQueriesClicksDatasetMapper,
     LVISMultiInstClicksDatasetMapper
 )
 
@@ -74,7 +65,6 @@ from mask2former import (
     COCOPanopticNewBaselineDatasetMapper,
     COCOPanopticInteractiveDatasetMapper,
     COCOInstanceInteractiveDatasetMapper,
-    InstanceSegEvaluator,
     MaskFormerInstanceDatasetMapper,
     MaskFormerPanopticDatasetMapper,
     MaskFormerSemanticDatasetMapper,
@@ -97,160 +87,23 @@ class Trainer(DefaultTrainer):
         evaluator manually in your script and do not have to worry about the
         hacky if-else logic here.
         """
-        if output_folder is None:
-            output_folder = os.path.join(cfg.OUTPUT_DIR, "inference")
-        evaluator_list = []
-        evaluator_type = MetadataCatalog.get(dataset_name).evaluator_type
-        # semantic segmentation
-        if evaluator_type in ["sem_seg", "ade20k_panoptic_seg"]:
-            evaluator_list.append(
-                SemSegEvaluator(
-                    dataset_name,
-                    distributed=True,
-                    output_dir=output_folder,
-                )
-            )
-        # instance segmentation
-        if evaluator_type == "coco":
-            evaluator_list.append(COCOEvaluator(dataset_name, output_dir=output_folder))
-        # panoptic segmentation
-        if evaluator_type in [
-            "coco_panoptic_seg",
-            "ade20k_panoptic_seg",
-            "cityscapes_panoptic_seg",
-            "mapillary_vistas_panoptic_seg",
-        ]:
-            if cfg.MODEL.MASK_FORMER.TEST.PANOPTIC_ON:
-                evaluator_list.append(COCOPanopticEvaluator(dataset_name, output_folder))
-        # COCO
-        if evaluator_type == "coco_panoptic_seg" and cfg.MODEL.MASK_FORMER.TEST.INSTANCE_ON:
-            evaluator_list.append(COCOEvaluator(dataset_name, output_dir=output_folder))
-        if evaluator_type == "coco_panoptic_seg" and cfg.MODEL.MASK_FORMER.TEST.SEMANTIC_ON:
-            evaluator_list.append(SemSegEvaluator(dataset_name, distributed=True, output_dir=output_folder))
-        # Mapillary Vistas
-        if evaluator_type == "mapillary_vistas_panoptic_seg" and cfg.MODEL.MASK_FORMER.TEST.INSTANCE_ON:
-            evaluator_list.append(InstanceSegEvaluator(dataset_name, output_dir=output_folder))
-        if evaluator_type == "mapillary_vistas_panoptic_seg" and cfg.MODEL.MASK_FORMER.TEST.SEMANTIC_ON:
-            evaluator_list.append(SemSegEvaluator(dataset_name, distributed=True, output_dir=output_folder))
-        # Cityscapes
-        if evaluator_type == "cityscapes_instance":
-            assert (
-                torch.cuda.device_count() > comm.get_rank()
-            ), "CityscapesEvaluator currently do not work with multiple machines."
-            return CityscapesInstanceEvaluator(dataset_name)
-        if evaluator_type == "cityscapes_sem_seg":
-            assert (
-                torch.cuda.device_count() > comm.get_rank()
-            ), "CityscapesEvaluator currently do not work with multiple machines."
-            return CityscapesSemSegEvaluator(dataset_name)
-        if evaluator_type == "cityscapes_panoptic_seg":
-            if cfg.MODEL.MASK_FORMER.TEST.SEMANTIC_ON:
-                assert (
-                    torch.cuda.device_count() > comm.get_rank()
-                ), "CityscapesEvaluator currently do not work with multiple machines."
-                evaluator_list.append(CityscapesSemSegEvaluator(dataset_name))
-            if cfg.MODEL.MASK_FORMER.TEST.INSTANCE_ON:
-                assert (
-                    torch.cuda.device_count() > comm.get_rank()
-                ), "CityscapesEvaluator currently do not work with multiple machines."
-                evaluator_list.append(CityscapesInstanceEvaluator(dataset_name))
-        # ADE20K
-        if evaluator_type == "ade20k_panoptic_seg" and cfg.MODEL.MASK_FORMER.TEST.INSTANCE_ON:
-            evaluator_list.append(InstanceSegEvaluator(dataset_name, output_dir=output_folder))
-        # LVIS
-        if evaluator_type == "lvis":
-            return LVISEvaluator(dataset_name, output_dir=output_folder)
-        if len(evaluator_list) == 0:
-            raise NotImplementedError(
-                "no Evaluator for the dataset {} with the type {}".format(
-                    dataset_name, evaluator_type
-                )
-            )
-        elif len(evaluator_list) == 1:
-            return evaluator_list[0]
-        return DatasetEvaluators(evaluator_list)
+        return None
 
     @classmethod
     def build_test_loader(cls,cfg,dataset_name):
-        if cfg.DATASETS.TEST[0] == "GrabCut":
+        if cfg.DATASETS.TEST[0] == "GrabCut" or cfg.DATASETS.TEST[0] == "Berkeley":
             from mask2former.data.datasets.register_grabcut import register_grabcut
-            # register_berkeley()
-            print("Grabcut Dataset")
-            print(dataset_name)
             mapper = COCOMvalDatasetMapper(cfg, False)
-            return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
-        elif cfg.INPUT.DATASET_MAPPER_NAME == "interactive_coco_instance_lsj":
-            print("interactive dataset mapper")
-            print(dataset_name)
-            mapper = COCOInstanceInteractiveDatasetMapper(cfg, False)
-            return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
-        elif cfg.INPUT.DATASET_MAPPER_NAME == "GrabCut":
-            from mask2former.data.datasets.register_grabcut import register_grabcut
-            # register_berkeley()
-            print("BerKely Dataset")
-            print(dataset_name)
-            mapper = COCOMvalDatasetMapper(cfg, False)
-            return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
-        elif cfg.INPUT.DATASET_MAPPER_NAME == "coco_single_instance":
-            print("Sinle Instance dataset mapper")
-            print(dataset_name)
-            mapper = COCOSingleInstDatasetMapper(cfg, False)
-            return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
-        elif cfg.INPUT.DATASET_MAPPER_NAME == "interactive_coco_instance_clicks":
-            print("interactive clicks dataset mapper")
-            print(dataset_name)
-            mapper = COCOInteractiveClicksDatasetMapper(cfg, False)
             return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
         else:
             return None
         
     @classmethod
     def build_train_loader(cls, cfg):
-        # Single instance clicks datamapper
-        if cfg.INPUT.DATASET_MAPPER_NAME == "single_instance_stuff_clicks":
-            mapper = COCOSingleInstStuffClicksDatasetMapper(cfg,True)
-            return build_detection_train_loader(cfg, mapper=mapper)
-        elif cfg.INPUT.DATASET_MAPPER_NAME == "single_instance_clicks":
-            mapper = COCOSingleInstClicksDatasetMapper(cfg,True)
-            return build_detection_train_loader(cfg, mapper=mapper)
-        elif cfg.INPUT.DATASET_MAPPER_NAME == "multi_instances_clicks":
-            mapper = COCOMultiInstClicksDatasetMapper(cfg,True)
-            return build_detection_train_loader(cfg, mapper=mapper)
-        # coco instance segmentation lsj new baseline
-        elif cfg.INPUT.DATASET_MAPPER_NAME == "multi_instances_clicks_stuff":
-            mapper = COCOMultiInstStuffClicksDatasetMapper(cfg,True)
-            if cfg.ITERATIVE.TRAIN.USE_MULTICLASS_SOFTMAX:
-                from mask2former.utils.equal_num_instances_batch import build_detection_train_loader_equal
-                return build_detection_train_loader_equal(cfg, mapper=mapper)
-            else:
-                return build_detection_train_loader(cfg, mapper=mapper)
-        elif cfg.INPUT.DATASET_MAPPER_NAME == "coco_instance_lsj":
-            # mapper = COCOInstanceNewBaselineDatasetMapper(cfg, True)
-            # print("interactive dataset mapper")
-            mapper = COCOInstanceInteractiveDatasetMapper(cfg, True)
-            return build_detection_train_loader(cfg, mapper=mapper)
-        elif cfg.INPUT.DATASET_MAPPER_NAME == "multi_instances_distractor":
-            print("mulit instance distractor_bg dataset mapper")
-            # mapper = COCOInstanceInteractiveDatasetMapper(cfg, True)
-            mapper = COCOInteractiveDistractorDatasetMapper(cfg, True)
-            return build_detection_train_loader(cfg, mapper=mapper)
-        elif cfg.INPUT.DATASET_MAPPER_NAME == "interactive_coco_instance_lsj":
-
-            print("interactive distractor_bg dataset mapper")
-            # mapper = COCOInstanceInteractiveDatasetMapper(cfg, True)
-            mapper = COCOInteractiveDistractorDatasetMapper(cfg, True)
-            return build_detection_train_loader(cfg, mapper=mapper)
-        # coco panoptic segmentation lsj new baseline
-        elif cfg.INPUT.DATASET_MAPPER_NAME == "coco_single_instance":
-            print("Sinle Instance dataset mapper")
-            mapper = COCOSingleInstDatasetMapper(cfg, True)
-            return build_detection_train_loader(cfg, mapper=mapper)
-        elif cfg.INPUT.DATASET_MAPPER_NAME == "interactive_coco_instance_clicks":
-
-            print("interactive clicks distractor_bg dataset mapper")
-            # mapper = COCOInstanceInteractiveDatasetMapper(cfg, True)
-            mapper = COCOInteractiveClicksDatasetMapper(cfg, True)
-            return build_detection_train_loader(cfg, mapper=mapper)
+        if cfg.INPUT.DATASET_MAPPER_NAME == "multi_instances_clicks_stuffs_mq":
+            from mask2former.utils.equal_num_instances_batch import build_detection_train_loader_equal
+            mapper = COCOMultiInstStuffMultiQueriesClicksDatasetMapper(cfg,True)
+            return build_detection_train_loader_equal(cfg, mapper=mapper)
         else:
             mapper = None
             return build_detection_train_loader(cfg, mapper=mapper)
@@ -429,6 +282,11 @@ def main(args):
 
     # os.environ["NCCL_ASYNC_ERROR_HANDLING"] = str(1)
     # os.environ["NCCL_P2P_DISABLE"] = str(1)
+    import debugpy
+
+    debugpy.listen(5678)
+    print("Waiting for debugger")
+    debugpy.wait_for_client()
     
     if args.eval_only:
         model = Trainer.build_model(cfg)
@@ -451,11 +309,7 @@ def main(args):
         return res
 
     # import pdb; pdb.set_trace()
-    # import debugpy
-
-    # debugpy.listen(5678)
-    # print("Waiting for debugger")
-    # debugpy.wait_for_client()
+    
     trainer = Trainer(cfg)
     # breakpoint()
     trainer.resume_or_load(resume=args.resume)

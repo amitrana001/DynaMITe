@@ -14,7 +14,7 @@ from detectron2.modeling.postprocessing import sem_seg_postprocess
 from detectron2.structures import Boxes, ImageList, Instances, BitMasks
 from detectron2.utils.memory import retry_if_cuda_oom
 
-from mask2former.evaluation import iterative_evaluator
+# from mask2former.evaluation import iterative_evaluator
 from .modeling.final_criterion import SetFinalCriterion
 from .modeling.new_criterion import SetNewCriterion
 from .modeling.matcher import HungarianMatcher
@@ -184,7 +184,7 @@ class IterativeMask2FormerMQ(nn.Module):
 
     def forward(self, batched_inputs, images=None, scribbles=None, num_instances=None,
                 features=None, mask_features=None, transformer_encoder_features=None, 
-                multi_scale_features=None, prev_mask_logits=None):
+                multi_scale_features=None, prev_mask_logits=None, batched_num_scrbs_per_mask= None):
         """
         Args:
             batched_inputs: a list, batched outputs of :class:`DatasetMapper`.
@@ -210,10 +210,16 @@ class IterativeMask2FormerMQ(nn.Module):
                     segments_info (list[dict]): Describe each segment in `panoptic_seg`.
                         Each dict contains keys "id", "category_id", "isthing".
         """
+        
         if (images is None) or (scribbles is None) or (num_instances is None):
-            images, scribbles, num_instances, batched_num_scrbs_per_mask = preprocess_batch_data(batched_inputs, self.device,
-                                                                    self.pixel_mean, self.pixel_std,
-                                                                    self.size_divisibility, self.random_bg_queries)
+            if self.training:
+                images, scribbles, num_instances, batched_num_scrbs_per_mask = preprocess_batch_data(batched_inputs, self.device,
+                                                                        self.pixel_mean, self.pixel_std,
+                                                                        self.size_divisibility, self.random_bg_queries)
+            else:
+                images, scribbles, num_instances, batched_num_scrbs_per_mask = preprocess_batch_data(batched_inputs, self.device,
+                                                                        self.pixel_mean, self.pixel_std,
+                                                                        self.size_divisibility, self.random_bg_queries)
         if features is None:
             features = self.backbone(images.tensor)
         # mask_features, transformer_encoder_features, multi_scale_features, outputs = self.sem_seg_head(features, mask_features, transformer_encoder_features, multi_scale_features, scribbles=scribbles)
@@ -336,13 +342,15 @@ class IterativeMask2FormerMQ(nn.Module):
         image_size = mask_pred.shape[-2:]
         result = Instances(image_size)
         # mask (before sigmoid)
-        # num_scrbs_per_mask.append(mask_pred.shape[0]-sum(num_scrbs_per_mask))
+        import copy
+        num_scrbs_per_mask_copy = copy.deepcopy(num_scrbs_per_mask)
+        num_scrbs_per_mask_copy.append(mask_pred.shape[0]-sum(num_scrbs_per_mask))
 
-        # temp_out = []
-        # splited_masks = torch.split(mask_pred, num_scrbs_per_mask, dim=0)
-        # for m in splited_masks[:-1]:
-        #     temp_out.append(torch.max(m, dim=0).values)
-        # mask_pred = torch.cat([torch.stack(temp_out),splited_masks[-1]]) # can remove splited_masks[-1] all together
+        temp_out = []
+        splited_masks = torch.split(mask_pred, num_scrbs_per_mask_copy, dim=0)
+        for m in splited_masks[:-1]:
+            temp_out.append(torch.max(m, dim=0).values)
+        mask_pred = torch.cat([torch.stack(temp_out),splited_masks[-1]]) # can remove splited_masks[-1] all together
 
         mask_pred = mask_pred[:num_instances]
         result.pred_masks = (mask_pred > 0).float()
@@ -353,11 +361,11 @@ class IterativeMask2FormerMQ(nn.Module):
             result.pred_classes = torch.zeros((num_instances))
         else:
             # [Q, K+1] -> [fg, K]
-            # temp_out = []
-            # splited_scores = torch.split(mask_cls, num_scrbs_per_mask, dim=0)
-            # for m in splited_scores[:-1]:
-            #     temp_out.append(torch.max(m, dim=0).values)
-            # mask_cls = torch.cat([torch.stack(temp_out),splited_scores[-1]])
+            temp_out = []
+            splited_scores = torch.split(mask_cls, num_scrbs_per_mask_copy, dim=0)
+            for m in splited_scores[:-1]:
+                temp_out.append(torch.max(m, dim=0).values)
+            mask_cls = torch.cat([torch.stack(temp_out),splited_scores[-1]])
 
             scores = F.softmax(mask_cls, dim=-1)[:num_instances, :-1]
             labels_per_image = scores.argmax(dim=1)

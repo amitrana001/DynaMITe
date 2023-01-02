@@ -201,26 +201,20 @@ class COCOMvalDatasetMapper:
                 new_instances = Instances(image_size=image_shape)
                 all_masks = dataset_dict["padding_mask"].int()
                 
-                    
                 new_instances.set('gt_masks', gt_masks)
                 new_instances.set('gt_classes', instances.gt_classes)
                 new_instances.set('gt_boxes', instances.gt_boxes) 
                    
-                gt_masks = gt_masks.unsqueeze(0)
-                fg_scrbs, bg_scrbs = generate_point_to_blob_masks_eval_deterministic(gt_masks, all_masks=all_masks, max_num_points=1)
-                # print(gt_masks.shape)
-                # fg = get_scribble_eval(np.asarray(gt_masks[0][0]).astype(np.uint8)*255, bg = False)
-                # if np.argwhere(fg).shape[0] == 0:
-                #     return None
-                # fg_scribs = torch.from_numpy(fg)
-                # dataset_dict["fg_scrbs"] = fg_scribs.unsqueeze(0)
-                dataset_dict["fg_scrbs"] = fg_scrbs.squeeze(0)
+                gt_masks = gt_masks
+                fg_scrbs, num_scrbs_per_mask = generate_point_to_blob_masks_eval_deterministic(gt_masks, all_masks=all_masks, max_num_points=1)
+                dataset_dict["fg_scrbs"] = fg_scrbs
+                dataset_dict["num_scrbs_per_mask"] = num_scrbs_per_mask
                 dataset_dict["bg_scrbs"] = None
                 # dataset_dict["bg_scrbs"] = bg_scrbs
                 # dataset_dict["bg_scrbs"] = torch.zeros_like(bg_scrbs)
                 dataset_dict["bg_mask"] = (~all_masks).to(dtype = torch.uint8)
 
-                dataset_dict["scrbs_count"] = dataset_dict["fg_scrbs"].shape[0] #+ dataset_dict["bg_scrbs"].shape[0]
+                dataset_dict["scrbs_count"] = dataset_dict["fg_scrbs"][0].shape[0] #+ dataset_dict["bg_scrbs"].shape[0]
             else:
                 return None
             

@@ -1,103 +1,32 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
-import os
+from audioop import mul
 import datetime
 import logging
 import time
+import os
 from collections import OrderedDict, abc
 from contextlib import ExitStack, contextmanager
+from traceback import walk_tb
 from typing import List, Union
 import torch
 import torchvision
 from torch import nn
+import cv2
+import detectron2.utils.comm as comm
+from detectron2.utils.events import EventStorage, get_event_storage
+from detectron2.structures import BitMasks
+import csv
 import numpy as np
 from detectron2.utils.comm import get_world_size, is_main_process
 from detectron2.utils.logger import log_every_n_seconds
-from ..data.scribble.gen_scribble import get_iterative_scribbles, get_iterative_eval
-from ..utils.iterative_misc import preprocess_batch_data, get_new_scribbles
-from mask2former.data.points.annotation_generator import get_corrective_points, get_next_click
-class DatasetEvaluator:
-    """
-    Base class for a dataset evaluator.
-    The function :func:`inference_on_dataset` runs the model over
-    all samples in the dataset, and have a DatasetEvaluator to process the inputs/outputs.
-    This class will accumulate information of the inputs/outputs (by :meth:`process`),
-    and produce evaluation results in the end (by :meth:`evaluate`).
-    """
-
-    def reset(self):
-        """
-        Preparation for a new round of evaluation.
-        Should be called before starting a round of evaluation.
-        """
-        pass
-
-    def process(self, inputs, outputs):
-        """
-        Process the pair of inputs and outputs.
-        If they contain batches, the pairs can be consumed one-by-one using `zip`:
-        .. code-block:: python
-            for input_, output in zip(inputs, outputs):
-                # do evaluation on single input/output pair
-                ...
-        Args:
-            inputs (list): the inputs that's used to call the model.
-            outputs (list): the return value of `model(inputs)`
-        """
-        pass
-
-    def evaluate(self):
-        """
-        Evaluate/summarize the performance, after processing all input/output pairs.
-        Returns:
-            dict:
-                A new evaluator class can return a dict of arbitrary format
-                as long as the user can process the results.
-                In our train_net.py, we expect the following format:
-                * key: the name of the task (e.g., bbox)
-                * value: a dict of {metric name: score}, e.g.: {"AP50": 80}
-        """
-        pass
-
-
-class DatasetEvaluators(DatasetEvaluator):
-    """
-    Wrapper class to combine multiple :class:`DatasetEvaluator` instances.
-    This class dispatches every evaluation call to
-    all of its :class:`DatasetEvaluator`.
-    """
-
-    def __init__(self, evaluators):
-        """
-        Args:
-            evaluators (list): the evaluators to combine.
-        """
-        super().__init__()
-        self._evaluators = evaluators
-
-    def reset(self):
-        for evaluator in self._evaluators:
-            evaluator.reset()
-
-    def process(self, inputs, outputs):
-        for evaluator in self._evaluators:
-            evaluator.process(inputs, outputs)
-
-    def evaluate(self):
-        results = OrderedDict()
-        for evaluator in self._evaluators:
-            result = evaluator.evaluate()
-            if is_main_process() and result is not None:
-                for k, v in result.items():
-                    assert (
-                        k not in results
-                    ), "Different evaluators produce results with the same key {}".format(k)
-                    results[k] = v
-        return results
-
+from mask2former.data.points.annotation_generator import get_next_click
+from mask2former.evaluation.eval_utils import post_process, compute_iou, get_next_click, save_visualization, prepare_scribbles
+from detectron2.utils.colormap import colormap
+color_map = colormap(rgb=True, maximum=1)
 
 def get_avg_noc(
-    model, data_loader, evaluator: Union[DatasetEvaluator, List[DatasetEvaluator], None],
-    max_interactions=20, iou_threshold = 0.85, use_clicks = True 
+    model, data_loader, cfg, evaluator=None,iou_threshold = 0.85,
+    max_interactions = 20, is_post_process = False
 ):
     """
     Run model on the data_loader and evaluate the metrics with evaluator.
@@ -120,17 +49,12 @@ def get_avg_noc(
     Returns:
         The return value of `evaluator.evaluate()`
     """
+    
     num_devices = get_world_size()
     logger = logging.getLogger(__name__)
     logger.info("Start inference on {} batches".format(len(data_loader)))
 
     total = len(data_loader)  # inference data loader must have a fixed length
-    if evaluator is None:
-        # create a no-op evaluator
-        evaluator = DatasetEvaluators([])
-    if isinstance(evaluator, abc.MutableSequence):
-        evaluator = DatasetEvaluators(evaluator)
-    evaluator.reset()
 
     num_warmup = min(5, total - 1)
     start_time = time.perf_counter()
@@ -138,16 +62,28 @@ def get_avg_noc(
     total_compute_time = 0
     total_eval_time = 0
 
-    # total number of object instances
-    total_num_instances = 0
-    total_num_interactions = 0
-    num_failed_objects=0
-    total_iou = 0.0
+    save_results_path = os.path.join("./output/", cfg.DATASETS.TEST[0], "swin_small/")
+    
+    # total_iou = 0.0
+    save_evaluation_path = os.path.join("./output/",  f'{cfg.DATASETS.TEST[0]}.txt')
+    if not os.path.exists(save_evaluation_path):
+        # print("No File")
+        header = ['Model Name', 'IOU_thres', 'Avg_NOC', 'NOF', "Avg_IOU", "max_num_iters", "num_inst"]
+        with open(save_evaluation_path, 'w') as f:
+            writer = csv.writer(f, delimiter= "\t")
+            writer.writerow(header)
+
     with ExitStack() as stack:
         if isinstance(model, nn.Module):
             stack.enter_context(inference_context(model))
         stack.enter_context(torch.no_grad())
         # breakpoint()
+        use_prev_logits = False
+        # total number of object instances
+        total_num_instances = 0
+        total_num_interactions = 0
+        num_failed_objects=0
+        total_iou = 0.0
         start_data_time = time.perf_counter()
         for idx, inputs in enumerate(data_loader):
             total_data_time += time.perf_counter() - start_data_time
@@ -159,62 +95,87 @@ def get_avg_noc(
 
             start_compute_time = time.perf_counter()
             
-            
-            outputs = model(inputs)
-
-            # ### Interaction loop
-            orig_device = inputs[0]['instances'].gt_masks.device
+            # orig_device = inputs[0]['instances'].gt_masks.device
             
             gt_masks = inputs[0]['instances'].gt_masks.to('cpu')
-            pred_masks = outputs[0]['instances'].pred_masks.to('cpu')
             bg_mask = inputs[0]["bg_mask"].to('cpu')
-
+            not_clicked_map = np.ones_like(gt_masks[0], dtype=np.bool)
+            
             num_instances, h_t, w_t = gt_masks.shape[:]
-            h,w = pred_masks.shape[1:]
             total_num_instances+=num_instances
-
+            
+            ignore_masks = None
+            if 'ignore_mask' in inputs[0]:
+                ignore_masks = inputs[0]['ignore_mask'].to(device='cpu', dtype = torch.uint8)
+                ignore_masks =  torchvision.transforms.Resize(size = (h_t,w_t))(ignore_masks)
+                # ignore_masks = ignore_masks>128
             # we start with atleast one interaction per instance
             total_num_interactions+=(num_instances)
 
-            num_interactions = 0
+            num_interactions = 1
             # stop_interaction = False
             ious = [0.0]*num_instances
+            radius = 8
+            
+            (processed_results, outputs, images, scribbles,
+            num_insts, features, mask_features,
+            transformer_encoder_features, multi_scale_features,
+            batched_num_scrbs_per_mask) = model(inputs)
+            orig_device = images.tensor.device
+
+            # save_visualization(inputs[0], gt_masks, scribbles[0], save_results_path,  ious[0], num_interactions-1,  alpha_blend=0.6)
+            pred_masks = processed_results[0]['instances'].pred_masks.to('cpu',dtype=torch.uint8)
+            pred_masks = torchvision.transforms.Resize(size = (h_t,w_t))(pred_masks)
+
+            if is_post_process:
+                pred_masks = post_process(pred_masks,inputs[0]['fg_scrbs'],ious,iou_threshold)
+            
+            ious = compute_iou(gt_masks,pred_masks,ious,iou_threshold,ignore_masks)
+            # save_visualization(inputs[0], pred_masks, scribbles[0], save_results_path,  ious[0], num_interactions,  alpha_blend=0.6)
             
             while (num_interactions<max_interactions):
                 
-                # TO DO
-                # don't change the masks with iou 80%
-                pred_masks = outputs[0]['instances'].pred_masks.to('cpu',dtype=torch.uint8)
-                pred_masks = torchvision.transforms.Resize(size = (h_t,w_t))(pred_masks)
-                ious = compute_iou(gt_masks,pred_masks,ious,iou_threshold)
-                
                 if all(iou >= iou_threshold for iou in ious):
-                    # stop_interaction=True
                     break
-                else:
-                    new_scrbs = []
-                    # gt_masks = torchvision.transforms.Resize(size = (h,w))(gt_masks)
-                    for i,(gt_mask, pred_mask) in enumerate(zip(gt_masks, pred_masks)):
-                        if ious[i] < iou_threshold:
-                            # total_num_interactions+=1
-                            scribbles, is_fg = get_corrective_points(pred_mask, gt_mask, bg_mask, device=orig_device)
-                            new_scrbs.append(scribbles)
+                # don't change the masks with iou 80%
+                for i,(gt_mask, pred_mask) in enumerate(zip(gt_masks, pred_masks)):
+                    if ious[i] < iou_threshold:
+                        scrbs, is_fg, not_clicked_map= get_next_click(pred_mask, gt_mask, not_clicked_map,
+                                                                     radius=radius, device=orig_device,
+                                                                     ignore_mask=ignore_masks[0])
 
-                            total_num_interactions+=1
-                            if is_fg:
-                                fg = torchvision.transforms.Resize(size = (h_t, w_t))(scribbles[0].unsqueeze(0)).squeeze(0)
-                                inputs[0]['fg_scrbs'][i] = torch.logical_or(inputs[0]['fg_scrbs'][i], fg)
+                        total_num_interactions+=1
+                        scrbs = prepare_scribbles(scrbs,images)
+                        if is_fg:
+                            scribbles[0][i] = torch.cat([scribbles[0][i], scrbs], 0)
+                            batched_num_scrbs_per_mask[0][i] += 1
+                        else:
+                            if scribbles[0][-1] is None:
+                                scribbles[0][-1] = scrbs
                             else:
-                                bg = torchvision.transforms.Resize(size = (h_t, w_t))(scribbles[0].unsqueeze(0))
-                                if inputs[0]['bg_scrbs'] is None:
-                                    inputs[0]['bg_scrbs'] = bg
-                                else:
-                                    inputs[0]['bg_scrbs'] = torch.cat((inputs[0]['bg_scrbs'],bg))     
-                outputs = model(inputs)
+                                scribbles[0][-1] = torch.cat((scribbles[0][-1],scrbs))
                 
+                (processed_results, outputs, images, scribbles,
+                num_insts, features, mask_features, transformer_encoder_features,
+                multi_scale_features, batched_num_scrbs_per_mask)= model(inputs, images, scribbles, num_insts,
+                                                                        features, mask_features, transformer_encoder_features,
+                                                                        multi_scale_features, batched_num_scrbs_per_mask=batched_num_scrbs_per_mask)
+                
+                pred_masks = processed_results[0]['instances'].pred_masks.to('cpu',dtype=torch.uint8)
+                pred_masks = torchvision.transforms.Resize(size = (h_t,w_t))(pred_masks)
+
+                if is_post_process:
+                    pred_masks = post_process(pred_masks,inputs[0]['fg_scrbs'],ious,iou_threshold)
+                
+                ious = compute_iou(gt_masks,pred_masks,ious,iou_threshold,ignore_masks)
                 num_interactions+=1
+                # save_visualization(inputs[0], pred_masks, scribbles[0], save_results_path,  ious[0], num_interactions,  alpha_blend=0.6)
+                
+                
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
             if num_interactions >= max_interactions:
-                print(inputs[0]["image_id"])
+                # print(inputs[0]["image_id"])
                 for iou in ious:
                     if iou<iou_threshold:
                         num_failed_objects+=1
@@ -222,13 +183,10 @@ def get_avg_noc(
                 total_iou += iou
 
             ###--------------
-            if torch.cuda.is_available():
-                torch.cuda.synchronize()
+            # if torch.cuda.is_available():
+            #     torch.cuda.synchronize()
             total_compute_time += time.perf_counter() - start_compute_time
 
-            # start_eval_time = time.perf_counter()
-            # evaluator.process(inputs, outputs)
-            # total_eval_time += time.perf_counter() - start_eval_time
 
             iters_after_start = idx + 1 - num_warmup * int(idx >= num_warmup)
             data_seconds_per_iter = total_data_time / iters_after_start
@@ -247,6 +205,8 @@ def get_avg_noc(
                         f"Total: {total_seconds_per_iter:.4f} s/iter. "
                         f"Total instances: {total_num_instances}. "
                         f"Average interactions:{(total_num_interactions/total_num_instances):.2f}. "
+                        f"Avg IOU: {(total_iou/total_num_instances):.3f} "
+                        f"Failed Instances: {num_failed_objects} "
                         f"ETA={eta}"
                     ),
                     n=5,
@@ -269,7 +229,6 @@ def get_avg_noc(
         )
     )
 
-
     logger.info(
         "Total number of instances: {}, Average num of interactions:{}".format(
             total_num_instances, total_num_interactions/total_num_instances
@@ -280,8 +239,26 @@ def get_avg_noc(
             num_failed_objects, total_iou/total_num_instances
         ) 
     )
-    # results = evaluator.evaluate()
-    # An evaluator may return None when not in main process.
+    # header = ['Model Name', 'IOU_thres', 'Avg_NOC', 'NOF', "Avg_IOU", "max_num_iters", "num_inst"]
+    model_name = cfg.MODEL.WEIGHTS.split("/")[-2]
+    if is_post_process:
+        model_name+="_p"
+    Avg_NOC = np.round(total_num_interactions/total_num_instances,2)
+    Avg_IOU = np.round(total_iou/total_num_instances, 2)
+
+    row = [model_name, iou_threshold, Avg_NOC, num_failed_objects, Avg_IOU, max_interactions, total_num_instances]
+    with open(save_evaluation_path, 'a') as f:
+        writer = csv.writer(f, delimiter= "\t")
+        writer.writerow(row)
+    
+    # with EventStorage() as s:
+    if comm.is_main_process():
+        # storage = get_event_storage()
+    
+        storage = get_event_storage()
+        storage.put_scalar(f"NOC_{iou_threshold*100}", total_num_interactions/total_num_instances)
+        storage.put_scalar("Avg IOU", total_iou/total_num_instances)
+        storage.put_scalar("Failed Cases", num_failed_objects)
     # Replace it by an empty dict instead to make it easier for downstream code to handle
     results = None
     if results is None:
@@ -301,14 +278,3 @@ def inference_context(model):
     model.eval()
     yield
     model.train(training_mode)
-
-def compute_iou(gt_masks, pred_masks, ious, iou_threshold):
-    for i in range(len(ious)):
-        intersection = (gt_masks[i] * pred_masks[i]).sum()
-        union = torch.logical_or(gt_masks[i], pred_masks[i]).to(torch.int).sum()
-        if ious[i] < iou_threshold:
-            ious[i]= intersection/union
-        else:
-            ious[i]= max(intersection/union, ious[i])
-    # print(ious)
-    return ious

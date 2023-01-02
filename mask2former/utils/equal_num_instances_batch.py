@@ -49,7 +49,7 @@ class EqualInstancesPerBatch(torchdata.IterableDataset):
         """
         self.dataset = dataset
         self.batch_size = batch_size
-        self._buckets = [[] for _ in range(31)]
+        self._buckets = [[] for _ in range(101)]
         # Hard-coded two aspect ratio groups: w > h and w < h.
         # Can add support for more aspect ratio groups, but doesn't seem useful
 
@@ -66,6 +66,66 @@ class EqualInstancesPerBatch(torchdata.IterableDataset):
                 # guaranteed to execute
                 del bucket[:]
                 yield data
+
+class EqualInstancesGroupedAspectRatioPerBatch(torchdata.IterableDataset):
+    """
+    Batch data that have similar aspect ratio together.
+    In this implementation, images whose aspect ratio < (or >) 1 will
+    be batched together.
+    This improves training speed because the images then need less padding
+    to form a batch.
+
+    It assumes the underlying dataset produces dicts with "width" and "height" keys.
+    It will then produce a list of original dicts with length = batch_size,
+    all with similar aspect ratios.
+    """
+
+    def __init__(self, dataset, batch_size):
+        """
+        Args:
+            dataset: an iterable. Each element must be a dict with keys
+                "width" and "height", which will be used to batch data.
+            batch_size (int):
+        """
+        self.dataset = dataset
+        self.batch_size = batch_size
+        self._buckets = [[[],[]] for _ in range(101)]
+        # Hard-coded two aspect ratio groups: w > h and w < h.
+        # Can add support for more aspect ratio groups, but doesn't seem useful
+
+    def __iter__(self):
+        for d in self.dataset:
+            w, h = d["width"], d["height"]
+            aspect_id = 0 if w > h else 1
+            bucket_id = d['instances'].gt_masks.shape[0]
+            bucket = self._buckets[bucket_id][aspect_id]
+            bucket.append(d)
+            if len(bucket) == self.batch_size:
+                data = bucket[:]
+                # Clear bucket first, because code after yield is not
+                # guaranteed to execute
+                del bucket[:]
+                yield data
+        for buckets in self._buckets:
+            bucket = buckets[0]
+            if bucket:
+                t= len(bucket)
+                i=0
+                while(len(bucket)<self.batch_size):
+                    bucket.append(bucket[i%t])
+                    i+=1
+                yield  bucket[:]
+            bucket = buckets[1]
+            if bucket:
+                t= len(bucket)
+                i=0
+                while(len(bucket)<self.batch_size):
+                    bucket.append(bucket[i%t])
+                    i+=1
+                yield bucket[:]
+                
+
+
 
 @configurable(from_config=_train_loader_from_config)
 def build_detection_train_loader_equal(
@@ -176,7 +236,7 @@ def build_batch_data_loader(
             collate_fn=operator.itemgetter(0),  # don't batch, but yield individual elements
             worker_init_fn=worker_init_reset_seed,
         )  # yield individual mapped dict
-        data_loader = EqualInstancesPerBatch(data_loader, batch_size)
+        data_loader = EqualInstancesGroupedAspectRatioPerBatch(data_loader, batch_size)
         if collate_fn is None:
             return data_loader
         return MapDataset(data_loader, collate_fn)

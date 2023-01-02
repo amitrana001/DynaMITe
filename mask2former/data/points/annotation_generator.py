@@ -61,53 +61,6 @@ def generate_point_masks(masks, max_n_pts, void_label=255, sampling="fixed"):
 
     return point_masks
 
-
-def generate_point_to_patch_masks(masks, patch_size, void_label=255):
-    """
-    :param masks: numpy array of shape N x I x H x W
-    :param patch_size: size of patch (int)
-    """
-    masks = masks.astype(np.uint8)
-    masks[masks == void_label] = 0
-
-    N, I, H, W = masks.shape
-    num_instances = N * I
-    masks = np.reshape(masks, (num_instances, H, W))
-
-    img_x0, img_y0, img_x1, img_y1 = 0, 0, W, H
-
-    if patch_size % 2 == 0:  # patch_size should be odd
-        print("Patch size should be odd, the new patch size is {0} ({1} + 1)".format((patch_size + 1), (patch_size)))
-        patch_size = patch_size + 1
-
-    if patch_size > 20:
-        raise ValueError("Patch size cannot be bigger than 20!")
-
-    ps = patch_size // 2
-
-    point_to_patch_masks = []
-    for num_ins, (_m) in enumerate(masks):
-        sample_locations = np.where(_m == 1)
-        _pm = np.zeros_like(_m)
-        if len(sample_locations[0]) > 0:
-            print("here")
-            for y,x in list(zip(sample_locations[0], sample_locations[1])):
-                patch_x0 = 0 if (x - ps) < img_x0 else (x - ps)
-                patch_y0 = 0 if (y - ps) < img_y0 else (y - ps)
-                patch_x1 = W if (x + ps) > img_x1 else (x + ps)
-                patch_y1 = H if (y + ps) > img_y1 else (y + ps)
-                _pm[patch_y0:patch_y1, patch_x0:patch_x1] = 1
-            point_to_patch_masks.append(_pm)
-        else:
-            point_to_patch_masks.append(_pm)
-
-    point_masks = np.reshape(
-        np.stack(point_to_patch_masks, axis=0),
-        (N, I, H, W)
-    )
-
-    return point_masks
-
 def point_candidates_dt(mask, max_num_pts=3, k=1.7):
     mask = mask.astype(np.uint8)
     # masks[masks == void_label] = 0
@@ -228,7 +181,7 @@ def gen_multi_points_per_mask(masks, max_num_points=3, radius_size=8, all_masks=
     """
     # assert all_masks is not None
     masks = np.asarray(masks).astype(np.uint8)
-    all_masks = np.asarray(all_masks).astype(np.uint8)
+    all_masks = np.asarray(all_masks) #.astype(np.uint8)
     # masks[masks == void_label] = 0
     
     I, H, W = masks.shape
@@ -237,17 +190,20 @@ def gen_multi_points_per_mask(masks, max_num_points=3, radius_size=8, all_masks=
     for i, (_m) in enumerate(masks):
         sample_locations = point_candidates_dt(_m, max_num_pts=max_num_points)
         _pm = np.zeros_like(_m)
-        all_masks = np.logical_or(all_masks, _m)
+        # all_masks = np.logical_or(all_masks, _m)
         if sample_locations.shape[0] > 0:
-            all_points_per_mask = np.zeros_like(_m)
+            # all_points_per_mask = np.zeros_like(_m)
+            points_per_mask = []
             for loc in sample_locations:
                 _pm = create_circular_mask(H, W, centers=[loc], radius=radius_size)
-                all_points_per_mask = np.logical_or(all_points_per_mask, _pm)
-                point_to_blob_masks.append(_pm)
+                # all_points_per_mask = np.logical_or(all_points_per_mask, _pm)
+                points_per_mask.append(_pm)
                 num_scrbs_per_mask[i]+=1
-            point_to_blob_masks.insert(0,all_points_per_mask)
-            num_scrbs_per_mask[i]+=1
+            point_to_blob_masks.append(torch.from_numpy(np.stack(points_per_mask, axis=0)).to(torch.float))
+            # point_to_blob_masks.insert(0,all_points_per_mask)
+            # num_scrbs_per_mask[i]+=1
         else:
+            return None
             print("no points")
             point_to_blob_masks.append(_pm)
             num_scrbs_per_mask[i]+=1
@@ -268,19 +224,22 @@ def gen_multi_points_per_mask(masks, max_num_points=3, radius_size=8, all_masks=
 
         sample_locations = sample_locations[indices]
     if sample_locations.shape[0] > 0:
-        all_points_for_bg =  np.zeros_like(full_bg_mask)
+        # all_points_for_bg =  np.zeros_like(full_bg_mask)
+        points_for_bg = []
         for loc in sample_locations:
             _bg = create_circular_mask(H, W, centers=[loc], radius=radius_size)
-            all_points_for_bg = np.logical_or(all_points_for_bg, _bg)
-            bg.append(_bg)
-        bg.insert(0,all_points_for_bg)
+            points_for_bg.append(_bg)
+            # all_points_for_bg = np.logical_or(all_points_for_bg, _bg)
+        bg.append(torch.from_numpy(np.stack(points_for_bg, axis=0)).to(torch.float))
+        # bg.insert(0,all_points_for_bg)
     else:
+        return None
         bg.append(_bg)
 
-    point_to_blob_masks = np.stack(point_to_blob_masks, axis=0)
-    point_to_blob_masks = torch.from_numpy(point_to_blob_masks).to(dtype=torch.uint8)
+    # point_to_blob_masks = np.stack(point_to_blob_masks, axis=0)
+    # point_to_blob_masks = torch.from_numpy(point_to_blob_masks).to(dtype=torch.uint8)
 
-    bg = torch.from_numpy(np.stack(bg, axis=0)).to(dtype=torch.uint8)
+    # bg = torch.from_numpy(np.stack(bg, axis=0)).to(dtype=torch.uint8)
     # print(np.unique(masks))
     return point_to_blob_masks, bg, num_scrbs_per_mask
     # raise NotImplementedError("Not implemented yet!!!")
@@ -346,65 +305,32 @@ def generate_point_to_blob_masks_eval(masks, max_num_points=3, radius_size=8, al
     # raise NotImplementedError("Not implemented yet!!!")
 
 
-def generate_point_to_blob_masks_eval_deterministic(masks, max_num_points=1, radius_size=8, all_masks=None):
+def generate_point_to_blob_masks_eval_deterministic(gt_masks, max_num_points=1, radius_size=8, all_masks=None):
 
     """
-    :param masks: numpy array of shape N x I x H x W
+    :param masks: numpy array of shape I x H x W
     :param patch_size: size of patch (int)
     """
-    # assert all_masks is not None
-    masks = np.asarray(masks).astype(np.uint8)
-    all_masks = np.asarray(all_masks).astype(np.uint8)
-    # masks[masks == void_label] = 0
+    gt_masks = np.asarray(gt_masks).astype(np.uint8)
     
-    N, I, H, W = masks.shape
-    num_instances = N * I
-    masks = np.reshape(masks, (num_instances, H, W))
+    I, H, W = gt_masks.shape
+    num_scrbs_per_mask = [0]*I
     point_to_blob_masks = []
-    # full_mask = np.zeros((H,W))
-    for num_ins, (_m) in enumerate(masks):
+    for i, (_m) in enumerate(gt_masks):
         sample_locations = point_candidates_dt_determinstic(_m, max_num_pts=max_num_points)
         _pm = np.zeros_like(_m)
-        all_masks = np.logical_or(all_masks, _m)
+        # all_masks = np.logical_or(all_masks, _m)
         if sample_locations.shape[0] > 0:
-            _pm = create_circular_mask(H, W, centers=sample_locations, radius=radius_size)
-            point_to_blob_masks.append(_pm)
-        else:
-            point_to_blob_masks.append(_pm)
+            # all_points_per_mask = np.zeros_like(_m)
+            points_per_mask = []
+            for loc in sample_locations:
+                _pm = create_circular_mask(H, W, centers=[loc], radius=radius_size)
+                # all_points_per_mask = np.logical_or(all_points_per_mask, _pm)
+                points_per_mask.append(_pm)
+                num_scrbs_per_mask[i]+=1
+            point_to_blob_masks.append(torch.from_numpy(np.stack(points_per_mask, axis=0)).to(torch.float))
 
-    
-    # full_bg_mask = np.logical_not(all_masks).astype(int)
-    bg = []
-    full_bg_mask = (~all_masks).astype(np.uint8)
-    _bg = np.zeros_like(full_bg_mask)
-    # pick = np.random.rand()
-    # if pick > 0.5:
-    sample_locations = point_candidates_dt_determinstic(full_bg_mask, max_num_pts=max_num_points)
-    # else:
-    #     sample_locations = np.argwhere(full_bg_mask)
-    #     num_pts = np.random.randint(1,max_num_points+1)
-    #     num_pts = min(num_pts, sample_locations.shape[0])
-    #     # try:
-    #     indices = random.sample(range(sample_locations.shape[0]),num_pts)
-    #     # except ValueError:
-    #     #     indices = []
-    #     sample_locations = sample_locations[indices]
-    if sample_locations.shape[0] > 0:
-        for loc in sample_locations:
-            _bg = create_circular_mask(H, W, centers=[loc], radius=radius_size)
-            bg.append(_bg)
-    else:
-        bg.append(_bg)
-
-    masks = np.reshape(
-        np.stack(point_to_blob_masks, axis=0),
-        (N, I, H, W)
-    )
-
-    bg = torch.from_numpy(np.stack(bg, axis=0)).to(dtype=torch.uint8)
-    # print(np.unique(masks))
-    return torch.from_numpy(masks).to(dtype=torch.uint8), bg
-    # raise NotImplementedError("Not implemented yet!!!")
+    return point_to_blob_masks, num_scrbs_per_mask
 
 def get_iterative_points(pred_mask, gt_mask, device):
 
@@ -582,38 +508,3 @@ def get_next_click(pred_mask, gt_mask, bg_mask, device):
         pm = create_circular_mask(H, W, centers=sample_locations, radius=8)
     scribbles.append(torch.from_numpy(pm).to(device,dtype = torch.uint8))
     return torch.stack(scribbles,0), is_fg
-
-
-
-def generate_point_to_bbox_masks(masks, void_label=255):
-    """
-    :param masks: numpy array of shape N x I x H x W
-    """
-    masks = masks.astype(np.uint8)
-    masks[masks == void_label] = 0
-
-    N, I, H, W = masks.shape
-    num_instances = N * I
-    masks = np.reshape(masks, (num_instances, H, W))
-
-    point_to_bbox_masks = []
-    for num_ins, (_m) in enumerate(masks):
-        sample_locations = np.where(_m == 1)
-        _pm = np.zeros_like(_m)
-        if len(sample_locations[0]) > 0:
-            if len(sample_locations[0]) == 1:  # for annotations with a single point
-                _pm[sample_locations[0], sample_locations[1]] = 1
-            else:
-                x1, x2, y1, y2 = sample_locations[0].min(), sample_locations[0].max(), sample_locations[1].min(), \
-                                 sample_locations[1].max()
-                _pm[x1:x2, y1:y2] = 1
-            point_to_bbox_masks.append(_pm)
-        else:
-            point_to_bbox_masks.append(_pm)
-
-    point_to_bbox_masks = np.reshape(
-        np.stack(point_to_bbox_masks, axis=0),
-        (N, I, H, W)
-    )
-
-    return point_to_bbox_masks
