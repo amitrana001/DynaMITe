@@ -170,11 +170,17 @@ def get_next_click_fg(pred_mask, gt_mask, not_clicked_map, radius=5, device='cpu
 
 def get_next_click(pred_mask, gt_mask, not_clicked_map, radius=5, device='cpu', ignore_mask=None, padding=True):
 
-    not_ignore_mask = np.logical_not(np.asarray(ignore_mask, dtype=np.bool_))
+    if ignore_mask is not None:
+        not_ignore_mask = np.logical_not(np.asarray(ignore_mask, dtype=np.bool_))
     gt_mask = np.asarray(gt_mask, dtype = np.bool_)
     pred_mask = np.asarray(pred_mask, dtype = np.bool_)
-    fn_mask =  np.logical_and(np.logical_and(gt_mask, np.logical_not(pred_mask)), not_ignore_mask)
-    fp_mask =  np.logical_and(np.logical_and(np.logical_not(gt_mask), pred_mask), not_ignore_mask)
+
+    if ignore_mask is not None:
+        fn_mask =  np.logical_and(np.logical_and(gt_mask, np.logical_not(pred_mask)), not_ignore_mask)
+        fp_mask =  np.logical_and(np.logical_and(np.logical_not(gt_mask), pred_mask), not_ignore_mask)
+    else:
+        fn_mask =  np.logical_and(gt_mask, np.logical_not(pred_mask))
+        fp_mask =  np.logical_and(np.logical_not(gt_mask), pred_mask)
     
     if fn_mask.sum()==0:
         fn_mask = gt_mask
