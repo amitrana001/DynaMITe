@@ -1,4 +1,4 @@
-_BASE_: multi_queries_stufff_clicks_R50_bs16_ep25.yaml
+_BASE_: multi_queries_stufff_clicks_R50_bs16_ep50.yaml
 SOLVER:
   IMS_PER_BATCH: 32 #16
   BASE_LR: 0.0001
