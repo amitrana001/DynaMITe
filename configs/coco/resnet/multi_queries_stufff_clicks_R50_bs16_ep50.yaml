@@ -1,8 +1,8 @@
-_BASE_: iterativeClicks_Base-COCO-InstanceSegmentation.yaml
+_BASE_: Base-COCO-IterativeSegmentation.yaml
 MODEL:
-  META_ARCHITECTURE: "NewIterativeMaskFormer"
+  META_ARCHITECTURE: "IterativeMask2FormerMQ"
   SEM_SEG_HEAD:
-    NAME: "IterativeMaskFormerHead"
+    NAME: "IterativeM2FHeadMQ"
     IGNORE_VALUE: 255
     NUM_CLASSES: 80
     LOSS_WEIGHT: 1.0
@@ -16,9 +16,9 @@ MODEL:
     COMMON_STRIDE: 4
     TRANSFORMER_ENC_LAYERS: 6
   MASK_FORMER:
-    TRANSFORMER_DECODER_NAME: "InteractiveClicksTransformerDecoder"
+    TRANSFORMER_DECODER_NAME: "IterativeM2FTransformerDecoderMQ"
     TRANSFORMER_IN_FEATURE: "multi_scale_pixel_decoder"
-    # QUERY_INITIALIZER: "multi_scale" # OR single_scale
+    QUERY_INITIALIZER: "multi_scale" # OR single_scale
     DEEP_SUPERVISION: True
     NO_OBJECT_WEIGHT: 0.1
     CLASS_WEIGHT: 2.0
@@ -43,3 +43,8 @@ MODEL:
       PANOPTIC_ON: False
       OVERLAP_THRESHOLD: 0.8
       OBJECT_MASK_THRESHOLD: 0.8
+DATASETS:
+  TRAIN: ("coco_2017_train_panoptic",)
+INPUT:
+  DATASET_MAPPER_NAME: "multi_instances_clicks_stuffs_mq"
+VERSION: 2
