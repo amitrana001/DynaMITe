@@ -1,4 +1,4 @@
-_BASE_: multi_queries_stufff_clicks_swin_tiny_bs16_ep50.yaml
+_BASE_: ../resnet/multi_queries_stufff_clicks_R50_bs16_ep50.yaml
 MODEL:
   BACKBONE:
     NAME: "D2SwinTransformer"
