@@ -6,7 +6,7 @@ import numpy as np
 from PIL import Image
 
 from interactive_demo_tool.canvas import CanvasImage
-from interactive_demo_tool.controller import InteractiveController
+from interactive_demo_tool.controller_mq import InteractiveController
 from interactive_demo_tool.wrappers import BoundedNumericalEntry, FocusHorizontalScale, FocusCheckButton, \
     FocusButton, FocusLabelFrame
 from detectron2.utils.colormap import colormap

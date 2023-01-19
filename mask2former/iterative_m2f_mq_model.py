@@ -352,8 +352,15 @@ class IterativeMask2FormerMQ(nn.Module):
             temp_out.append(torch.max(m, dim=0).values)
         mask_pred = torch.cat([torch.stack(temp_out),splited_masks[-1]]) # can remove splited_masks[-1] all together
 
-        mask_pred = mask_pred[:num_instances]
-        result.pred_masks = (mask_pred > 0).float()
+        mask_pred = torch.argmax(mask_pred,0)
+        m = []
+        for i in range(num_instances):
+            m.append((mask_pred == i).float())
+        
+        mask_pred = torch.stack(m)
+        result.pred_masks = mask_pred
+        # mask_pred = mask_pred[:num_instances]
+        # result.pred_masks = (mask_pred > 0).float()
         result.pred_boxes = Boxes(torch.zeros(mask_pred.size(0), 4))
 
         if mask_cls is None:

@@ -25,7 +25,7 @@ def main():
     # cfg.merge_from_file("interactive_output/config.yaml")
     cfg.merge_from_file(args.config_file)
 
-    from train_net import Trainer
+    from iterative_train_net import Trainer
     model = Trainer.build_model(cfg)
     model.eval()
     cfg.MODEL.WEIGHTS = args.model

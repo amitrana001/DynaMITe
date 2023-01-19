@@ -23,7 +23,8 @@ def preprocess_batch_data(batched_inputs, device, pixel_mean, pixel_std, size_di
             fg_scribbles_count = []
             for x in batched_inputs:
                 batched_num_scrbs_per_mask.append(x['num_scrbs_per_mask'])
-                fg_scribbles_count.append(x["instances"].gt_masks.shape[0])
+                # fg_scribbles_count.append(x["instances"].gt_masks.shape[0])
+                fg_scribbles_count.append(len(x['num_scrbs_per_mask']))
                 scribbles_per_image = []
                 # split_fg = torch.split(x['fg_scrbs'], x['num_scrbs_per_mask'], dim=0)
                 for scrbs_per_mask in x['fg_scrbs']:
