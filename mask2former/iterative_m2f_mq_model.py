@@ -230,7 +230,7 @@ class IterativeMask2FormerMQ(nn.Module):
             #              multi_scale_features, accumulate_loss, num_instances,scribbles)
             # mask classification target
             if "instances" in batched_inputs[0]:
-                gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
+                gt_instances = [(x["instances"].to(self.device), x['padding_mask'].to(self.device)) for x in batched_inputs]
                 targets = self.prepare_targets(gt_instances, images)
             else:
                 targets = None
@@ -292,7 +292,7 @@ class IterativeMask2FormerMQ(nn.Module):
             height = input_per_image.get("height", image_size[0])
             width = input_per_image.get("width", image_size[1])
             processed_results.append({})
-
+            
             if self.sem_seg_postprocess_before_inference:
                 mask_pred_result = retry_if_cuda_oom(sem_seg_postprocess)(
                     mask_pred_result, image_size, height, width
@@ -315,17 +315,18 @@ class IterativeMask2FormerMQ(nn.Module):
         return processed_results
 
     def prepare_targets(self, targets, images):
-        h_pad, w_pad = images.tensor.shape[-2:]
+        # h_pad, w_pad = images.tensor.shape[-2:]
         new_targets = []
-        for targets_per_image in targets:
+        for (targets_per_image, padding_mask) in targets:
             # pad gt
-            gt_masks = targets_per_image.gt_masks
-            padded_masks = torch.zeros((gt_masks.shape[0], h_pad, w_pad), dtype=gt_masks.dtype, device=gt_masks.device)
-            padded_masks[:, : gt_masks.shape[1], : gt_masks.shape[2]] = gt_masks
+            # gt_masks = targets_per_image.gt_masks
+            # padded_masks = torch.zeros((gt_masks.shape[0], h_pad, w_pad), dtype=gt_masks.dtype, device=gt_masks.device)
+            # padded_masks[:, : gt_masks.shape[1], : gt_masks.shape[2]] = gt_masks
             new_targets.append(
                 {
                     "labels": targets_per_image.gt_classes,
-                    "masks": padded_masks,
+                    "masks": targets_per_image.gt_masks,
+                    "padding_mask": padding_mask
                 }
             )
         return new_targets

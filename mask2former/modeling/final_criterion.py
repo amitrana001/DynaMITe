@@ -270,7 +270,9 @@ class SetFinalCriterion(nn.Module):
         indices = []
         for i,t in enumerate(targets):
             num_gt_classes = len(t['labels']) + 1
-            target_bg_mask = 1 - torch.max(t["masks"],dim=0).values
+            # target_bg_mask = 1 - torch.max(t["masks"],dim=0).values
+            full_fg_mask = torch.max(t["masks"],dim=0).values
+            target_bg_mask = torch.logical_not(torch.logical_or(t["padding_mask"], full_fg_mask)).to(dtype=torch.uint8)
             targets[i]["masks"] = torch.cat((t["masks"], target_bg_mask.unsqueeze(0)), dim=0)
             indxs = torch.tensor(range(num_gt_classes))
             indices.append((indxs, indxs)) 

@@ -3,7 +3,7 @@ import torchvision
 from detectron2.structures import Boxes, ImageList, Instances, BitMasks
 from ..data.scribble.gen_scribble import get_iterative_scribbles
 import numpy as np
-from ..data.points.annotation_generator import get_corrective_points, get_iterative_points, create_circular_mask
+from ..data.points.annotation_generator import get_corrective_points, get_iterative_points, create_circular_mask,point_candidates_dt
 import copy
 import cv2
 import random
@@ -132,17 +132,6 @@ def get_new_points(targets, pred_output, prev_scribbles, radius = 8, random_bg_q
     # scibbles [bs, Q, h_gt, w_gt]
     device = prev_scribbles[0][0].device
 
-    # OPTIMIZATION
-    # directly take targets as input as they are already on the device
-
-    # prev_scribbles = prev_scribbles.clone()
-    # prev_scribbles = prev_scribbles
-    # gt_masks = inputs[0]['instances'].gt_masks.to('cpu')
-    # gt_instances = [x["instances"] for x in gt_data]
-    # pred_instances = [x["instances"] for x in pred_output]
-    # pred_masks = outputs[0]['instances'].pred_masks.to('cpu')
-    # gt_masks_batch= [x["instances"].gt_masks.to(device) for x in gt_data]
-    # gt_masks_batch= [x.gt_masks for x in targets]
     gt_masks_batch= [x['instances'].gt_masks.to(dtype = torch.uint8, device=device) for x in targets]
     pred_masks_batch = [x["instances"].pred_masks.to(dtype = torch.uint8) for x in pred_output]
 
@@ -198,22 +187,13 @@ def get_new_points_mq(targets, pred_output, prev_scribbles, radius = 8, random_b
     pred_masks_batch = [x["instances"].pred_masks.to(dtype = torch.uint8) for x in pred_output]
     padding_masks_batch = [x['padding_mask'].to(device=device) for x in targets]
 
-    # gt_masks_batch= [x.gt_masks for x in gt_instances]
-    # pred_masks_batch = [x.pred_masks for x in pred_instances]
-    
-    _, h_gt, w_gt = gt_masks_batch[0].shape
-    # # bs_queries, h, w =  pred_masks_batch[0].shape
-    # # import torchvision
-    t =  torchvision.transforms.Resize(size = (h_gt,w_gt))
-    pred_masks_batch = [t(pred_mask) for pred_mask in pred_masks_batch]
-
-    new_scribbles = []
+    # new_scribbles = []
     for i, (gt_masks_per_image, pred_masks_per_image, padding_mask) in enumerate(zip(gt_masks_batch,pred_masks_batch, padding_masks_batch)):
         # print(gt_masks_per_image.shape)
         # print(pred_masks_per_image.shape)
         comb_pred_mask = torch.max(pred_masks_per_image,dim=0).values.to(dtype=torch.bool)
         
-        new_scrbs_per_image = copy.deepcopy(prev_scribbles[i])
+        # new_scrbs_per_image = copy.deepcopy(prev_scribbles[i])
         full_fg_mask = torch.max(gt_masks_per_image,dim=0).values.to(device)
         # full_bg_mask = 1 - full_fg_mask
         full_bg_mask = torch.logical_not(torch.logical_or(padding_mask, full_fg_mask)).to(dtype=torch.uint8)
@@ -235,6 +215,39 @@ def get_new_points_mq(targets, pred_output, prev_scribbles, radius = 8, random_b
                 corrective_fg_point = get_next_points_fg(pred_masks_per_image[j], gt_masks_per_image[j],device)
                 prev_scribbles[i][j] = torch.cat([prev_scribbles[i][j],corrective_fg_point],0)
                 batched_num_scrbs_per_mask[i][j]+=corrective_fg_point.shape[0]
+ 
+    return prev_scribbles, batched_num_scrbs_per_mask   
+
+def get_new_points_mq_per_obj(targets, pred_output, prev_scribbles, radius = 8, random_bg_queries=False, batched_num_scrbs_per_mask=None):
+    # scibbles [bs, Q, h_gt, w_gt]
+    device = prev_scribbles[0][0].device
+
+    # OPTIMIZATION
+    # directly take targets as input as they are already on the device
+    gt_masks_batch= [x['instances'].gt_masks.to(dtype = torch.uint8, device=device) for x in targets]
+    pred_masks_batch = [x["instances"].pred_masks.to(dtype = torch.uint8) for x in pred_output]
+    padding_masks_batch = [x['padding_mask'].to(device=device) for x in targets]
+
+    # new_scribbles = []
+    for i, (gt_masks_per_image, pred_masks_per_image, padding_mask) in enumerate(zip(gt_masks_batch,pred_masks_batch, padding_masks_batch)):
+        # print(gt_masks_per_image.shape)
+        # print(pred_masks_per_image.shape)
+        indices = compute_iou(gt_masks_per_image,pred_masks_per_image)
+        full_fg_mask = torch.max(gt_masks_per_image,dim=0).values.to(device)
+        # full_bg_mask = 1 - full_fg_mask
+        full_bg_mask = torch.logical_not(torch.logical_or(padding_mask, full_fg_mask)).to(dtype=torch.uint8)
+        for j in indices:
+            corrective_scrbs, is_fg = get_corrective_points_mq(pred_masks_per_image[j], gt_masks_per_image[j],
+                                                            full_bg_mask, device, radius, max_num_points=2)
+            
+            if is_fg:
+                prev_scribbles[i][j] = torch.cat([prev_scribbles[i][j],corrective_scrbs],0)
+                batched_num_scrbs_per_mask[i][j]+=corrective_scrbs.shape[0]    
+            else:
+                if prev_scribbles[i][-1] is None:
+                    prev_scribbles[i][-1] = corrective_scrbs
+                else:
+                    prev_scribbles[i][-1] = torch.cat([prev_scribbles[i][-1], corrective_scrbs],0)
  
     return prev_scribbles, batched_num_scrbs_per_mask   
 
@@ -302,7 +315,7 @@ def get_fn_per_object(pred_masks, gt_masks):
         fn_per_object.append(fn)
     return fn_per_object
 
-def get_next_points_fg(gt_mask,pred_mask,device,max_num_pts=1,radius_size=8):
+def get_next_points_fg(gt_mask, pred_mask, device, max_num_pts=1, radius_size=8):
 
     gt_mask = np.asarray(gt_mask.cpu(), dtype = np.bool_)
     pred_mask = np.asarray(pred_mask.cpu(), dtype = np.bool_)
@@ -334,7 +347,7 @@ def get_next_points_fg(gt_mask,pred_mask,device,max_num_pts=1,radius_size=8):
     else:
         return torch.from_numpy(np.stack([_pm], axis=0)).to(device=device, dtype=torch.float)
 
-def get_next_points_bg(all_fp, device,max_num_pts=1,radius_size=8):
+def get_next_points_bg(all_fp, device, max_num_pts=1, radius_size=8):
 
     all_fp = np.asarray(all_fp.cpu(), dtype = np.bool_)
     # pred_mask = np.asarray(pred_mask, dtype = np.bool_)
@@ -364,4 +377,58 @@ def get_next_points_bg(all_fp, device,max_num_pts=1,radius_size=8):
     else:
         return torch.from_numpy(np.stack([_pm], axis=0)).to(device=device, dtype=torch.float)
 
+def get_corrective_points_mq(pred_mask, gt_mask, bg_mask, device, radius=8, max_num_points=2):
     
+    # pred_mask = (pred_mask*255) > 128
+    # gt_mask = (gt_mask*255) > 128
+    pred_mask = pred_mask>0.5
+    gt_mask = gt_mask > 0.5
+
+    # torch functionalities
+    fp = torch.logical_and(pred_mask, torch.logical_not(gt_mask)).to(dtype=torch.uint8)
+    fn = torch.logical_and(torch.logical_not(pred_mask), gt_mask).to(dtype=torch.uint8)
+
+    is_fg = True
+    if torch.sum(fn) > torch.sum(fp):
+        error_list = [fn]
+    else:
+        fp = torch.logical_and(fp, bg_mask).to(dtype=torch.uint8)
+        error_list = [fp]
+        is_fg=False
+    H, W = pred_mask.shape
+   
+    # processing tensors
+    scribbles = []
+    for m in error_list:
+        if torch.nonzero(m).shape[0] == 0:
+            if is_fg:
+                scribbles.append(m)
+            else:
+                m = m.cpu()
+                sample_locations = point_candidates_dt(np.asarray(bg_mask.to('cpu')).astype(np.uint8), max_num_pts=max_num_points)
+                _pm = np.zeros_like(m)
+                if sample_locations.shape[0] > 0:
+                    # all_points_per_mask = np.zeros_like(_m)
+                    points_per_mask = []
+                    for loc in sample_locations:
+                        _pm = create_circular_mask(H, W, centers=[loc], radius=radius)
+                        # all_points_per_mask = np.logical_or(all_points_per_mask, _pm)
+                        points_per_mask.append(_pm)
+                    return torch.from_numpy(np.stack(points_per_mask, axis=0)).to(device=device, dtype=torch.float), is_fg
+                else:
+                    return torch.from_numpy(np.stack([_pm], axis=0)).to(device=device, dtype=torch.float), is_fg
+        else:
+            m = m.cpu()
+            sample_locations = point_candidates_dt(np.asarray(m), max_num_pts=max_num_points)
+            _pm = np.zeros_like(m)
+            if sample_locations.shape[0] > 0:
+                # all_points_per_mask = np.zeros_like(_m)
+                points_per_mask = []
+                for loc in sample_locations:
+                    _pm = create_circular_mask(H, W, centers=[loc], radius=radius)
+                    # all_points_per_mask = np.logical_or(all_points_per_mask, _pm)
+                    points_per_mask.append(_pm)
+                return torch.from_numpy(np.stack(points_per_mask, axis=0)).to(device=device, dtype=torch.float), is_fg
+            else:
+                return torch.from_numpy(np.stack([_pm], axis=0)).to(device=device, dtype=torch.float), is_fg
+   

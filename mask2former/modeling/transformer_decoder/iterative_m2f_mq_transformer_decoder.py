@@ -18,7 +18,7 @@ from .position_encoding import PositionEmbeddingSine
 from detectron2.modeling.postprocessing import sem_seg_postprocess
 from .maskformer_transformer_decoder import TRANSFORMER_DECODER_REGISTRY
 from .descriptor_initializer import AvgPoolingInitializer
-from mask2former.utils import get_new_scribbles_opt, preprocess_batch_data, get_new_points_mq
+from mask2former.utils import get_new_scribbles_opt, preprocess_batch_data, get_new_points_mq,get_new_points_mq_per_obj
 class SelfAttentionLayer(nn.Module):
 
     def __init__(self, d_model, nhead, dropout=0.0,
@@ -490,7 +490,7 @@ class IterativeM2FTransformerDecoderMQ(nn.Module):
                     # print("before:",batched_num_scrbs_per_mask)
                     processed_results = self.process_results(data, images, prev_output, num_instances, batched_num_scrbs_per_mask)
                     if self.use_point_clicks:
-                        scribbles, batched_num_scrbs_per_mask = get_new_points_mq(data, processed_results, scribbles,
+                        scribbles, batched_num_scrbs_per_mask = get_new_points_mq_per_obj(data, processed_results, scribbles,
                                                                               random_bg_queries=self.random_bg_queries,
                                                                               batched_num_scrbs_per_mask = batched_num_scrbs_per_mask)
                     else:
@@ -746,17 +746,13 @@ class IterativeM2FTransformerDecoderMQ(nn.Module):
         for mask_cls_result, mask_pred_result, input_per_image, image_size, inst_per_image, num_scrbs_per_mask in zip(
             mask_cls_results, mask_pred_results, batched_inputs, images.image_sizes, num_instances, batched_num_scrbs_per_mask
         ):
-            height = input_per_image.get("height", image_size[0])
-            width = input_per_image.get("width", image_size[1])
+            # height = input_per_image.get("height", image_size[0])
+            # width = input_per_image.get("width", image_size[1])
             processed_results.append({})
 
-            # mask_pred_result = retry_if_cuda_oom(sem_seg_postprocess)(
-            #         mask_pred_result, image_size, height, width
-            #     )
-            # if mask_cls_result is not None:
-            #     mask_cls_result = mask_cls_result.to(mask_pred_result)
-            # if self.instance_on:
-            # print(num_scrbs_per_mask)
+            padding_mask = torch.logical_not(input_per_image["padding_mask"]).to(mask_pred_result.device)
+            mask_pred_result = mask_pred_result * padding_mask
+
             instance_r = retry_if_cuda_oom(self.interactive_instance_inference)(mask_cls_result, mask_pred_result,
                                                                                 inst_per_image, num_scrbs_per_mask)
             processed_results[-1]["instances"] = instance_r
