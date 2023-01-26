@@ -386,6 +386,10 @@ class IterativeM2FTransformerDecoderMQ(nn.Module):
         # self.descriptor_projection = nn.linear()
         # learnable query p.e.
         self.register_parameter("query_embed", nn.Parameter(torch.zeros(hidden_dim), True))
+        self.use_static_bg_queries = True
+        if self.use_static_bg_queries:
+            self.register_parameter("static_bg_pe", nn.Parameter(torch.zeros(self.num_static_bg_queries, hidden_dim), True))
+            self.register_parameter("static_bg_query", nn.Parameter(torch.zeros(self.num_static_bg_queries,hidden_dim), True))
 
         # level embedding (we always use 3 scales)
         self.num_feature_levels = 3
@@ -533,7 +537,28 @@ class IterativeM2FTransformerDecoderMQ(nn.Module):
 
         _, bs, _ = src[0].shape
         # num_scrbs = scribbles.shape[1]
-        if self.random_bg_queries:
+        # if self.random_bg_queries:
+        #     if batched_num_scrbs_per_mask is not None:
+        #         new_scribbles = []
+        #         for scrbs in scribbles:
+        #             if scrbs[-1] is not None:
+        #                 new_scribbles.append(torch.cat(scrbs))
+        #             else:
+        #                 new_scribbles.append(torch.cat(scrbs[:-1]))
+        #         # scribbles = new_scribbles
+        #     max_scrbs_batch = max([scrbs.shape[0] for scrbs in new_scribbles]) + self.num_static_bg_queries
+        #     descriptors = self.query_descriptors_initializer(x, new_scribbles, random_bg_queries=self.random_bg_queries )
+        #     for i, desc in enumerate(descriptors):
+        #         bg_queries = repeat(self.bg_query, "C -> 1 L C", L=max_scrbs_batch-desc.shape[1])
+        #         # bg_queries = repeat(self.bg_query, "C -> 1 L C", L=self.num_static_bg_queries)
+        #         descriptors[i] = torch.cat((descriptors[i], bg_queries), dim=1)
+        #     output = torch.cat(descriptors, dim=0)
+        #     # print(output.shape)
+        # else:
+        #     output = self.query_descriptors_initializer(x,new_scribbles)
+        #     max_scrbs_batch = max([scrbs.shape[0] for scrbs in new_scribbles])
+
+        if self.use_static_bg_queries:
             if batched_num_scrbs_per_mask is not None:
                 new_scribbles = []
                 for scrbs in scribbles:
@@ -541,24 +566,26 @@ class IterativeM2FTransformerDecoderMQ(nn.Module):
                         new_scribbles.append(torch.cat(scrbs))
                     else:
                         new_scribbles.append(torch.cat(scrbs[:-1]))
-                # scribbles = new_scribbles
-            max_scrbs_batch = max([scrbs.shape[0] for scrbs in new_scribbles]) + self.num_static_bg_queries
+            max_scrbs_batch = max([scrbs.shape[0] for scrbs in new_scribbles])
             descriptors = self.query_descriptors_initializer(x, new_scribbles, random_bg_queries=self.random_bg_queries )
             for i, desc in enumerate(descriptors):
                 bg_queries = repeat(self.bg_query, "C -> 1 L C", L=max_scrbs_batch-desc.shape[1])
                 # bg_queries = repeat(self.bg_query, "C -> 1 L C", L=self.num_static_bg_queries)
                 descriptors[i] = torch.cat((descriptors[i], bg_queries), dim=1)
             output = torch.cat(descriptors, dim=0)
-            # print(output.shape)
-        else:
-            output = self.query_descriptors_initializer(x,new_scribbles)
-        
+            
+            query_embed = repeat(self.query_embed, "C -> Q N C", N=bs, Q=output.shape[1])
+            static_bg_pe = repeat(self.static_bg_pe, "Bg C -> Bg N C", N=bs)
+            query_embed = torch.cat((query_embed,static_bg_pe),dim=0)
+            static_bg_queries = repeat(self.static_bg_query, "Bg C -> N Bg C", N=bs)
+            output = torch.cat((output,static_bg_queries), dim=1)
+            
         # num_scrbs = output.shape[0]
         Bs, num_scrbs, _ = output.shape
         # NxQxC -> QxNxC
         output = self.queries_nonlinear_projection(output).permute(1,0,2)
         # query positional embedding QxNxC
-        query_embed = repeat(self.query_embed, "C -> Q N C", N=bs, Q=num_scrbs)
+        # query_embed = repeat(self.query_embed, "C -> Q N C", N=bs, Q=num_scrbs)
         if self.use_pos_coords and (not self.random_bg_queries):
             scrbs_coords = self.get_random_coord_scrbs(scribbles) # bsxQx2
             pos_coord_embed = self.gen_sineembed_for_position(scrbs_coords.permute(1,0,2)) # Q x bs x C
