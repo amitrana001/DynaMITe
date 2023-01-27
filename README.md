@@ -5,6 +5,8 @@
 </div><br/>
 
 ## Tasks TO DO
+* Use combined masks for training
+    - Used in other methods inclduing FocalClick, RITM, BRS, f-BRS
 * New Evaluation Strategy:
     - Start with one click per object
     - Sample one click in one interaction on the largest error region

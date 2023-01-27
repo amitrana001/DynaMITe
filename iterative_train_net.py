@@ -92,7 +92,7 @@ class Trainer(DefaultTrainer):
 
     @classmethod
     def build_test_loader(cls,cfg,dataset_name):
-        if cfg.DATASETS.TEST[0] == "GrabCut" or cfg.DATASETS.TEST[0] == "Berkeley":
+        if cfg.DATASETS.TEST[0] == "GrabCut" or cfg.DATASETS.TEST[0] == "Berkeley" or cfg.DATASETS.TEST[0] == 'coco_Mval':
             from mask2former.data.datasets.register_grabcut import register_grabcut
             mapper = COCOMvalDatasetMapper(cfg, False)
             return build_detection_test_loader(cfg, dataset_name, mapper=mapper)

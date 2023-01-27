@@ -142,7 +142,7 @@ def get_avg_noc(
                     if ious[i] < iou_threshold:
                         scrbs, is_fg, not_clicked_map= get_next_click(pred_mask, gt_mask, not_clicked_map,
                                                                      radius=radius, device=orig_device,
-                                                                     ignore_mask=ignore_masks[0])
+                                                                     ignore_mask=ignore_masks[0] if ignore_masks!=None else None)
 
                         total_num_interactions+=1
                         scrbs = prepare_scribbles(scrbs,images)
