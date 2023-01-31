@@ -5,6 +5,8 @@
 </div><br/>
 
 ## Tasks TO DO
+* Randomness during evaluation
+* Brainstorm Multi instance evaluation click sampling strategy
 * Use combined masks for training
     - Used in other methods inclduing FocalClick, RITM, BRS, f-BRS
 * New Evaluation Strategy:
