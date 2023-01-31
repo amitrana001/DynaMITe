@@ -7,6 +7,10 @@
 ## Tasks TO DO
 * Randomness during evaluation
 * Brainstorm Multi instance evaluation click sampling strategy
+* Metrices to collect:
+    - Average IOUs per click and on completion
+    - Effect of click on other regions: change in ious on click (background as well as some other object)
+    - Switch between objects info
 * Use combined masks for training
     - Used in other methods inclduing FocalClick, RITM, BRS, f-BRS
 * New Evaluation Strategy:
