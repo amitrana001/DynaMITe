@@ -40,6 +40,12 @@
 
 ## Tasks Accomplished
 *
+
+## Transformer base Interactive Segmentation
+* SimpleClick: [[`paper`](https://arxiv.org/pdf/2210.11006.pdf)] [[`github`](https://github.com/uncbiag/SimpleClick)]
+* iSegFormer:  [[`paper`](https://arxiv.org/pdf/2112.11325.pdf)] [[`github`](https://github.com/uncbiag/iSegFormer)]
+* ICIP: [[`paper`](https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=9897542)] [[`github`](https://github.com/SamsungLabs/saic-is)]
+
    
 ## List of Relevant Papers
 * Mask2Former: [[`paper`](https://arxiv.org/abs/2112.01527)] [[`github`](https://github.com/facebookresearch/Mask2Former)]
