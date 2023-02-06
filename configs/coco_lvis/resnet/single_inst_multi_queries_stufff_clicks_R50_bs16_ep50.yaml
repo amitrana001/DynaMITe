@@ -1,0 +1,3 @@
+_BASE_: multi_queries_stufff_clicks_R50_bs16_ep50.yaml
+INPUT:
+  DATASET_MAPPER_NAME: "coco_lvis_single_inst_stuff_mq"

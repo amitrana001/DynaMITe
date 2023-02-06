@@ -1,0 +1,6 @@
+_BASE_: multi_queries_stufff_clicks_R50_bs16_ep50.yaml
+SOLVER:
+  IMS_PER_BATCH: 32 #16
+  BASE_LR: 0.0001
+  STEPS: (163889, 177546) #(327778, 355092)
+  MAX_ITER: 184375 #368750 

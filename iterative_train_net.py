@@ -52,6 +52,8 @@ from mask2former import (
     COCOAllInstClicksDatasetMapper,
     COCOMultiInstClicksDatasetMapper,
     COCOMultiInstStuffClicksDatasetMapper,
+    COCOLVISMultiInstMQClicksDatasetMapper,
+    COCOLVISSingleInstMQClicksDatasetMapper,
     COCOMultiInstStuffMultiQueriesClicksDatasetMapper,
     COCOSingleInstMultiQueriesStuffClicksDatasetMapper,
     LVISMultiInstClicksDatasetMapper
@@ -107,6 +109,12 @@ class Trainer(DefaultTrainer):
             return build_detection_train_loader_equal(cfg, mapper=mapper)
         elif cfg.INPUT.DATASET_MAPPER_NAME == "single_instance_clicks_stuffs_mq":
             mapper = COCOSingleInstMultiQueriesStuffClicksDatasetMapper(cfg,True)
+            return build_detection_train_loader_equal(cfg, mapper=mapper)
+        elif cfg.INPUT.DATASET_MAPPER_NAME == "coco_lvis_single_inst_stuff_mq":
+            mapper = COCOLVISMultiInstMQClicksDatasetMapper(cfg,True)
+            return build_detection_train_loader_equal(cfg, mapper=mapper)
+        elif cfg.INPUT.DATASET_MAPPER_NAME == "coco_lvis_multi_insts_stuff_mq":
+            mapper = COCOLVISSingleInstMQClicksDatasetMapper(cfg,True)
             return build_detection_train_loader_equal(cfg, mapper=mapper)
         else:
             mapper = None

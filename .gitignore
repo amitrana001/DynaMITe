@@ -7,6 +7,7 @@ datasets
 *.json
 *.diff
 *.jpg
+*.pyc
 !/projects/DensePose/doc/images/*.jpg
 
 # compilation and distribution
