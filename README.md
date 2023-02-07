@@ -41,12 +41,20 @@
 ## Tasks Accomplished
 *
 
-## Transformer base Interactive Segmentation
+## Transformer based Interactive Segmentation
 * SimpleClick: [[`paper`](https://arxiv.org/pdf/2210.11006.pdf)] [[`github`](https://github.com/uncbiag/SimpleClick)]
 * iSegFormer:  [[`paper`](https://arxiv.org/pdf/2112.11325.pdf)] [[`github`](https://github.com/uncbiag/iSegFormer)]
 * ICIP: [[`paper`](https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=9897542)] [[`github`](https://github.com/SamsungLabs/saic-is)]
 
-   
+## Multi-object or Full Image Interactive Segmentation
+* Learning interactive multi-object segmentation through appearance embedding and spatial attention
+[[`paper`](https://ietresearch.onlinelibrary.wiley.com/doi/full/10.1049/ipr2.12520)] [[`github`](https://github.com/BingqiangZhou/Learning-Interactive-Multi-Object-Segmentation)]
+* Efficient Interactive Multi-Object Segmentation in Medical Images
+[[`paper`](https://openaccess.thecvf.com/content_ECCVW_2018/papers/11132/Leon_Efficient_Interactive_Multi-Object_Segmentation_in_Medical_Images_ECCVW_2018_paper.pdf)] [[`github`]()]
+
+## Single Instance Interactive Segmentation
+* Getting to 99% Accuracy in Interactive Segmentation [[`paper`](https://arxiv.org/abs/2003.07932)] [[`github`](https://github.com/MarcoForte/DeepInteractiveSegmentation)]
+
 ## List of Relevant Papers
 * Mask2Former: [[`paper`](https://arxiv.org/abs/2112.01527)] [[`github`](https://github.com/facebookresearch/Mask2Former)]
 * MaskFormer: [[`paper`](https://arxiv.org/abs/2107.06278)] [[`github`](https://github.com/facebookresearch/MaskFormer)]
