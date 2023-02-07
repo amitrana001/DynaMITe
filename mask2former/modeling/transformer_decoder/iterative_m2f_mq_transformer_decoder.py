@@ -536,28 +536,7 @@ class IterativeM2FTransformerDecoderMQ(nn.Module):
                                 prev_mask_logits=None, batched_num_scrbs_per_mask=None):
 
         _, bs, _ = src[0].shape
-        # num_scrbs = scribbles.shape[1]
-        # if self.random_bg_queries:
-        #     if batched_num_scrbs_per_mask is not None:
-        #         new_scribbles = []
-        #         for scrbs in scribbles:
-        #             if scrbs[-1] is not None:
-        #                 new_scribbles.append(torch.cat(scrbs))
-        #             else:
-        #                 new_scribbles.append(torch.cat(scrbs[:-1]))
-        #         # scribbles = new_scribbles
-        #     max_scrbs_batch = max([scrbs.shape[0] for scrbs in new_scribbles]) + self.num_static_bg_queries
-        #     descriptors = self.query_descriptors_initializer(x, new_scribbles, random_bg_queries=self.random_bg_queries )
-        #     for i, desc in enumerate(descriptors):
-        #         bg_queries = repeat(self.bg_query, "C -> 1 L C", L=max_scrbs_batch-desc.shape[1])
-        #         # bg_queries = repeat(self.bg_query, "C -> 1 L C", L=self.num_static_bg_queries)
-        #         descriptors[i] = torch.cat((descriptors[i], bg_queries), dim=1)
-        #     output = torch.cat(descriptors, dim=0)
-        #     # print(output.shape)
-        # else:
-        #     output = self.query_descriptors_initializer(x,new_scribbles)
-        #     max_scrbs_batch = max([scrbs.shape[0] for scrbs in new_scribbles])
-
+        
         if self.use_static_bg_queries:
             if batched_num_scrbs_per_mask is not None:
                 new_scribbles = []

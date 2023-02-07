@@ -215,7 +215,7 @@ class COCOLVISMultiInstMQClicksDatasetMapper:
                 dataset_dict["bg_scrbs"] = bg_masks
                 dataset_dict["num_scrbs_per_mask"] = num_scrbs_per_mask
                 # print(masks.tensor.dtype)
-                assert len(num_scrbs_per_mask) == instances.gt_masks.shape[0]
+                assert len(num_scrbs_per_mask) == new_instances.gt_masks.shape[0]
                 if self.random_bg_queries:
                     pick = np.random.rand()
                     if pick < 0.20:
