@@ -2,11 +2,15 @@
 # Modified by Bowen Cheng from https://github.com/facebookresearch/detr/blob/master/d2/detr/dataset_mapper.py
 import copy
 import logging
-
+import pickle
 import numpy as np
 import torch
 import random
-
+import cv2
+from copy import deepcopy
+from detectron2.structures import BoxMode
+from fvcore.common.timer import Timer
+from pycocotools import coco
 from detectron2.config import configurable
 from detectron2.data import detection_utils as utils
 from detectron2.data import transforms as T
@@ -21,6 +25,46 @@ from mask2former.data.dataset_mappers.mapper_utils.datamapper_utils import conve
 from mask2former.data.points.annotation_generator import gen_multi_points_per_mask, generate_point_to_blob_masks
 
 __all__ = ["COCOLVISMultiInstMQClicksDatasetMapper"]
+
+
+def bbox_from_mask_np(mask, order='Y1Y2X1X2', return_none_if_invalid=False):
+  if len(np.where(mask)[0]) == 0:
+    return np.array([-1, -1, -1, -1])
+  x_min = np.where(mask)[1].min()
+  x_max = np.where(mask)[1].max()
+
+  y_min = np.where(mask)[0].min()
+  y_max = np.where(mask)[0].max()
+
+  if order == 'Y1Y2X1X2':
+    return np.array([y_min, y_max, x_min, x_max])
+  elif order == 'X1X2Y1Y2':
+    return np.array([x_min, x_max, y_min, y_max])
+  elif order == 'X1Y1X2Y2':
+    return np.array([x_min, y_min, x_max, y_max])
+  elif order == 'Y1X1Y2X2':
+    return np.array([y_min, x_min, y_max, x_max])
+  else:
+    raise ValueError("Invalid order argument: %s" % order)
+
+def sample_from_masks_layer(instances_info, encoded_masks, obj_id):
+    # objs_tree = sample._objects
+    # objs_tree = instances_info
+
+    node_mask = get_object_mask(instances_info, encoded_masks, obj_id)
+    gt_mask = node_mask
+    return gt_mask, [node_mask], []
+
+def get_object_mask(instances_info, encoded_masks, obj_id):
+
+    layer_indx, mask_id = instances_info[obj_id]['mapping']
+    obj_mask = (encoded_masks[:, :, layer_indx] == mask_id).astype(np.int32)
+    # if self._ignored_regions:
+    #     for layer_indx, mask_id in self._ignored_regions:
+    #         ignore_mask = self._encoded_masks[:, :, layer_indx] == mask_id
+    #         obj_mask[ignore_mask] = -1
+
+    return obj_mask
 
 
 def filter_coco_lvis_instances(instances, min_area):
@@ -123,18 +167,8 @@ class COCOLVISMultiInstMQClicksDatasetMapper:
         dataset_dict["image"] = torch.as_tensor(np.ascontiguousarray(image.transpose(2, 0, 1)))
         dataset_dict["padding_mask"] = torch.as_tensor(np.ascontiguousarray(padding_mask))
 
-        # if not self.is_train:
-            # USER: Modify this if you want to keep them for some reason.
-            # dataset_dict.pop("annotations", None)
-            # return dataset_dict
 
         if "annotations" in dataset_dict:
-            # USER: Modify this if you want to keep them for some reason.
-            for anno in dataset_dict["annotations"]:
-                # Let's always keep mask
-                # if not self.mask_on:
-                #     anno.pop("segmentation", None)
-                anno.pop("keypoints", None)
 
             # USER: Implement additional transformations if you have other types of data
             annos = [
@@ -174,7 +208,6 @@ class COCOLVISMultiInstMQClicksDatasetMapper:
                 # gt_masks = convert_coco_poly_to_mask(gt_masks.polygons, h, w)
                 # instances.gt_masks = gt_masks.tensor
 
-                fg_scribs = []
                 all_masks = dataset_dict["padding_mask"].int()
                 # filterd_gt_masks = []
                 new_instances = Instances(image_size=image_shape)

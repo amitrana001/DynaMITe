@@ -114,6 +114,7 @@ class Trainer(DefaultTrainer):
             mapper = COCOLVISSingleInstMQClicksDatasetMapper(cfg,True)
             return build_detection_train_loader_equal(cfg, mapper=mapper)
         elif cfg.INPUT.DATASET_MAPPER_NAME == "coco_lvis_multi_insts_stuff_mq":
+            print(cfg.INPUT.DATASET_MAPPER_NAME)
             mapper = COCOLVISMultiInstMQClicksDatasetMapper(cfg,True)
             return build_detection_train_loader_equal(cfg, mapper=mapper)
         else:
@@ -294,11 +295,11 @@ def main(args):
 
     # os.environ["NCCL_ASYNC_ERROR_HANDLING"] = str(1)
     # os.environ["NCCL_P2P_DISABLE"] = str(1)
-    import debugpy
+    #  import debugpy
 
-    debugpy.listen(5678)
-    print("Waiting for debugger")
-    debugpy.wait_for_client()
+    # debugpy.listen(5678)
+    # print("Waiting for debugger")
+    # debugpy.wait_for_client()
     
     if args.eval_only:
         model = Trainer.build_model(cfg)
