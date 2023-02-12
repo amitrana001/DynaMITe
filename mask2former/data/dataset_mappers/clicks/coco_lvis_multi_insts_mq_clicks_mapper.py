@@ -167,15 +167,22 @@ class COCOLVISMultiInstMQClicksDatasetMapper:
         dataset_dict["image"] = torch.as_tensor(np.ascontiguousarray(image.transpose(2, 0, 1)))
         dataset_dict["padding_mask"] = torch.as_tensor(np.ascontiguousarray(padding_mask))
 
-
+        stuff_prob = 0.15
         if "annotations" in dataset_dict:
 
             # USER: Implement additional transformations if you have other types of data
-            annos = [
-                utils.transform_instance_annotations(obj, transforms, image_shape)
-                for obj in dataset_dict.pop("annotations")
-                if obj.get("iscrowd", 0) == 0
-            ]
+            if stuff_prob > 0 and random.random() < stuff_prob: 
+                annos = [
+                    utils.transform_instance_annotations(obj, transforms, image_shape)
+                    for obj in dataset_dict.pop("annotations")
+                    if obj.get("iscrowd", 0) == 0
+                ]
+            else:
+                annos = [
+                    utils.transform_instance_annotations(obj, transforms, image_shape)
+                    for obj in dataset_dict.pop("annotations")
+                    if (obj.get("iscrowd", 0) == 0 and obj.get("isThing"))
+                ]
             # NOTE: does not support BitMask due to augmentation
             # Current BitMask cannot handle empty objects
             instances = utils.annotations_to_instances(annos, image_shape,  mask_format="bitmask")
