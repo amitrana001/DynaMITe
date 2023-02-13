@@ -25,7 +25,7 @@ from detectron2.utils.colormap import colormap
 color_map = colormap(rgb=True, maximum=1)
 
 def get_avg_noc(
-    model, data_loader, cfg, evaluator=None,iou_threshold = 0.90,
+    model, data_loader, cfg, evaluator=None,iou_threshold = 0.85,
     max_interactions = 20, is_post_process = False
 ):
     """

@@ -1,6 +1,7 @@
 # output dir
 output
 datasets
+weights
 
 *.zip
 *.png

@@ -1,4 +1,4 @@
-_BASE_: Base-COCO-IterativeSegmentation.yaml
+_BASE_: Base-coco-lvis-IterativeSegmentation.yaml
 MODEL:
   META_ARCHITECTURE: "IterativeMask2FormerMQ"
   SEM_SEG_HEAD:

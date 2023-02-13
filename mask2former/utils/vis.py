@@ -8,6 +8,23 @@ from detectron2.utils.visualizer import Visualizer
 from detectron2.data import DatasetCatalog, MetadataCatalog, build_detection_train_loader
 import torchvision.transforms.functional as F
 
+def get_palette(num_cls):
+    palette = np.zeros(3 * num_cls, dtype=np.int32)
+
+    for j in range(0, num_cls):
+        lab = j
+        i = 0
+
+        while lab > 0:
+            palette[j*3 + 0] |= (((lab >> 0) & 1) << (7-i))
+            palette[j*3 + 1] |= (((lab >> 1) & 1) << (7-i))
+            palette[j*3 + 2] |= (((lab >> 2) & 1) << (7-i))
+            i = i + 1
+            lab >>= 3
+
+    return palette.reshape((-1, 3))
+color_map = get_palette(80)[1:]
+
 def _create_text_labels(classes, scores, class_names, is_crowd=None):
     """
     Args:
@@ -128,3 +145,51 @@ def save_pred_segm(batch, model, indx = 0, display=True, data_name = "coco_2017_
         cv2.destroyAllWindows()
     cv2.destroyAllWindows()
     del visualizer
+
+def get_visualization(x, alpha_blend=  0.6):
+        from detectron2.utils.visualizer import Visualizer
+        from copy import deepcopy
+        # img = batch[0]
+        # image = img["image"]
+        image = np.asarray(x["image"].permute(1,2,0))
+        image = np.asarray(deepcopy(image))
+        
+        visualizer = Visualizer(image, metadata=None)
+        # pred_masks = F.resize(result_masks_for_vis.to(dtype=torch.uint8), image.shape[:2])
+        gt_masks = x["instances"].gt_masks
+        c = []
+        for i in range(gt_masks.shape[0]):
+            # c.append(color_map[2*(i)+2]/255.0)
+            c.append(color_map[i]/255.0)
+        # pred_masks = np.asarray(pred_masks).astype(np.bool_)
+        vis = visualizer.overlay_instances(masks = gt_masks, assigned_colors=c,alpha=alpha_blend)
+        # [Optional] prepare labels
+
+        image = vis.get_image()
+        # # Laminate your image!
+        # fig = overlay_masks(image, masks, labels=mask_labels, colors=cmap, mask_alpha=0.5)
+        total_colors = len(color_map)-1
+        
+        point_clicks_map = np.ones_like(image)*255
+        if x['fg_scrbs'] is not None:
+            for i, scrbs in enumerate(x['fg_scrbs']):
+                for scrb in scrbs:
+                    color = np.array(color_map[total_colors-5*i-4], dtype=np.uint8)
+                    # color = np.array([0,255,0], dtype=np.uint8)
+                    # if not show_only_masks:
+                    image[scrb>0.5, :] = np.array(color, dtype=np.uint8)
+                    # point_clicks_map[scrb>0.5, :] = np.array(color, dtype=np.uint8)
+        if x['bg_scrbs'] is not None:
+            for i, scrbs in enumerate(x['bg_scrbs']):
+                for scrb in scrbs:
+                    color = np.array([255,0,0], dtype=np.uint8)
+                    # if not show_only_masks:
+                    image[scrb>0.5, :] = np.array(color, dtype=np.uint8)
+                    # point_clicks_map[scrb>0.5, :] = np.array(color, dtype=np.uint8)
+        # image = image.clip(0,255)
+        img_write = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        cv2.imshow("img_window",img_write)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+        return
+        # return image, point_clicks_map

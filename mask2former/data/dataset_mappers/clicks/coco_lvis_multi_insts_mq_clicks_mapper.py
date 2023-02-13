@@ -227,6 +227,7 @@ class COCOLVISMultiInstMQClicksDatasetMapper:
                     #Take 75% masks as the foreground masks
                     num_masks = int(gt_masks.shape[0]*(0.75))
                 # num_masks = torch.randint(1, gt_masks.shape[0]+1, (1,))[0]
+                # print(num_masks)
                 # print(f'gt_masks:{gt_masks.shape[0]}, num_masks:{num_masks}')
                 random_indices = random.sample(range(gt_masks.shape[0]),num_masks)
                 new_gt_masks = gt_masks[random_indices]
