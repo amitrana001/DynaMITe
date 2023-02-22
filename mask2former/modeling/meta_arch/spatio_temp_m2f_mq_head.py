@@ -20,33 +20,33 @@ from ..transformer_decoder.maskformer_transformer_decoder import build_transform
 from ..pixel_decoder.fpn import build_pixel_decoder
 
 @SEM_SEG_HEADS_REGISTRY.register()
-class IterativeM2FHeadMQ(nn.Module):
+class SpatioTempM2FHeadMQ(nn.Module):
 
     _version = 2
 
-    def _load_from_state_dict(
-        self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs
-    ):
-        version = local_metadata.get("version", None)
-        if version is None or version < 2:
-            # Do not warn if train from scratch
-            scratch = True
-            logger = logging.getLogger(__name__)
-            for k in list(state_dict.keys()):
-                newk = k
-                # if "sem_seg_head" in k and not k.startswith(prefix + "predictor"):
-                #     newk = k.replace(prefix, prefix + "pixel_decoder.")
-                    # logger.debug(f"{k} ==> {newk}")
-                if newk != k:
-                    state_dict[newk] = state_dict[k]
-                    del state_dict[k]
-                    scratch = False
+    # def _load_from_state_dict(
+    #     self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs
+    # ):
+    #     version = local_metadata.get("version", None)
+    #     if version is None or version < 2:
+    #         # Do not warn if train from scratch
+    #         scratch = True
+    #         logger = logging.getLogger(__name__)
+    #         for k in list(state_dict.keys()):
+    #             newk = k
+    #             # if "sem_seg_head" in k and not k.startswith(prefix + "predictor"):
+    #             #     newk = k.replace(prefix, prefix + "pixel_decoder.")
+    #                 # logger.debug(f"{k} ==> {newk}")
+    #             if newk != k:
+    #                 state_dict[newk] = state_dict[k]
+    #                 del state_dict[k]
+    #                 scratch = False
 
-            if not scratch:
-                logger.warning(
-                    f"Weight format of {self.__class__.__name__} have changed! "
-                    "Please upgrade your models. Applying automatic conversion now ..."
-                )
+    #         if not scratch:
+    #             logger.warning(
+    #                 f"Weight format of {self.__class__.__name__} have changed! "
+    #                 "Please upgrade your models. Applying automatic conversion now ..."
+    #             )
 
     @configurable
     def __init__(
@@ -116,18 +116,19 @@ class IterativeM2FHeadMQ(nn.Module):
             ),
         }
 
-    def forward(self, data, targets, images, features, num_instances, mask=None, scribbles=None,
+    def forward(self, data, targets, images, features, num_instances, mask=None,
                 mask_features=None, transformer_encoder_features=None, 
-                multi_scale_features=None, prev_mask_logits=None, batched_num_scrbs_per_mask=None):
+                multi_scale_features=None, prev_mask_logits=None, batched_num_scrbs_per_mask=None,
+                batched_fg_coords_list = None, batched_bg_coords_list = None):
         
-        return self.layers(data, targets, images, features, num_instances, mask, scribbles = scribbles,
-                mask_features=mask_features, transformer_encoder_features=transformer_encoder_features, 
-                multi_scale_features=multi_scale_features, prev_mask_logits=prev_mask_logits,
-                batched_num_scrbs_per_mask = batched_num_scrbs_per_mask)
+        return self.layers(data, targets, images, features, num_instances, mask, mask_features,
+                transformer_encoder_features, multi_scale_features, prev_mask_logits,
+                batched_num_scrbs_per_mask, batched_fg_coords_list, batched_bg_coords_list)
 
-    def layers(self, data, targets, images, features, num_instances, mask=None, scribbles=None,
+    def layers(self, data, targets, images, features, num_instances, mask=None,
                mask_features=None, transformer_encoder_features=None, 
-               multi_scale_features=None, prev_mask_logits=None,batched_num_scrbs_per_mask=None):
+               multi_scale_features=None, prev_mask_logits=None,batched_num_scrbs_per_mask=None,
+               batched_fg_coords_list = None, batched_bg_coords_list = None):
         
         if (mask_features is None) or (multi_scale_features is None):
             mask_features, transformer_encoder_features, multi_scale_features = self.pixel_decoder.forward_features(features)
@@ -136,8 +137,8 @@ class IterativeM2FHeadMQ(nn.Module):
             # print("Scribbles:",scribbles.shape)
             # predictions = self.predictor(multi_scale_features, mask_features, mask, scribbles = scribbles)
             predictions, batched_num_scrbs_per_mask = self.predictor(data, targets, images, num_instances, multi_scale_features,
-                                        mask_features, mask, scribbles, prev_mask_logits,
-                                        batched_num_scrbs_per_mask)
+                                        mask_features, mask, prev_mask_logits, batched_num_scrbs_per_mask,
+                                        batched_fg_coords_list, batched_bg_coords_list)
         else:
             if self.transformer_in_feature == "transformer_encoder":
                 assert (

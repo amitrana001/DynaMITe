@@ -128,7 +128,7 @@ def generate_point_to_blob_masks(masks, max_num_points=3, radius_size=8, all_mas
     num_instances = N * I
     masks = np.reshape(masks, (num_instances, H, W))
     point_to_blob_masks = []
-    # full_mask = np.zeros((H,W))
+    
     for num_ins, (_m) in enumerate(masks):
         sample_locations = point_candidates_dt(_m, max_num_pts=max_num_points)
         _pm = np.zeros_like(_m)
@@ -204,9 +204,9 @@ def gen_multi_points_per_mask(masks, max_num_points=3, radius_size=8, all_masks=
             # num_scrbs_per_mask[i]+=1
         else:
             return None
-            print("no points")
-            point_to_blob_masks.append(_pm)
-            num_scrbs_per_mask[i]+=1
+            # print("no points")
+            # point_to_blob_masks.append(_pm)
+            # num_scrbs_per_mask[i]+=1
 
     # full_bg_mask = np.logical_not(all_masks).astype(int)
     bg = []
@@ -331,6 +331,51 @@ def generate_point_to_blob_masks_eval_deterministic(gt_masks, max_num_points=1, 
             point_to_blob_masks.append(torch.from_numpy(np.stack(points_per_mask, axis=0)).to(torch.float))
 
     return point_to_blob_masks, num_scrbs_per_mask
+
+
+def get_max_dt_point_mask(mask, max_num_pts=1, k=1.7):
+    mask = mask.astype(np.uint8)
+    # masks[masks == void_label] = 0
+
+    padded_mask = np.pad(mask, ((1, 1), (1, 1)), 'constant')
+    dt = cv2.distanceTransform(padded_mask.astype(np.uint8), cv2.DIST_L2, 0)[1:-1, 1:-1]
+    max_dist = np.max(dt)
+
+    coords_y, coords_x = np.where(dt == max_dist)
+
+    return [coords_y[0],coords_x[0]]
+
+def get_gt_points_determinstic(gt_masks, max_num_points=1, radius_size=8, ignore_masks=None):
+
+    """
+    :param masks: numpy array of shape I x H x W
+    :param patch_size: size of patch (int)
+    """
+    gt_masks = np.asarray(gt_masks).astype(np.uint8)
+    if ignore_masks is not None:
+        not_ignores_mask = np.logical_not(np.asarray(ignore_masks, dtype=np.bool_))
+    
+    I, H, W = gt_masks.shape
+    num_scrbs_per_mask = [0]*I
+    point_to_blob_masks = []
+    for i, (_m) in enumerate(gt_masks):
+        if ignore_masks is not None:
+            _m = np.logical_and(_m, not_ignores_mask[i]).astype(np.uint8)
+        max_dt_loc = get_max_dt_point_mask(_m, max_num_pts=max_num_points)
+        # _pm = np.zeros_like(_m)
+        points_per_mask = []
+        # # all_masks = np.logical_or(all_masks, _m)
+        # if sample_locations.shape[0] > 0:
+        #     # all_points_per_mask = np.zeros_like(_m)
+        #     points_per_mask = []
+        #     for loc in sample_locations:
+        _pm = create_circular_mask(H, W, centers=[max_dt_loc], radius=radius_size)
+        # all_points_per_mask = np.logical_or(all_points_per_mask, _pm)
+        points_per_mask.append(_pm)
+        num_scrbs_per_mask[i]+=1
+        point_to_blob_masks.append(torch.from_numpy(np.stack(points_per_mask, axis=0)).to(torch.float))
+
+    return point_to_blob_masks, num_scrbs_per_mask, max_dt_loc
 
 def get_iterative_points(pred_mask, gt_mask, device):
 

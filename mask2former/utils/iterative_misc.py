@@ -253,11 +253,11 @@ def get_new_points_mq_per_obj(targets, pred_output, prev_scribbles, radius = 8, 
 
 def compute_iou(gt_masks, pred_masks, worst=5):
 
-    intersections = torch.sum(torch.logical_and(gt_masks, pred_masks), (1,2))
-    unions = torch.sum(torch.logical_or(gt_masks,pred_masks), (1,2))
+    intersections = np.sum(np.logical_and(gt_masks, pred_masks), (1,2))
+    unions = np.sum(np.logical_or(gt_masks,pred_masks), (1,2))
     ious = intersections/unions
     # print(ious)
-    return torch.topk(ious, min(worst, len(ious)),largest=False).indices
+    return torch.topk(torch.tensor(ious), min(worst, len(ious)),largest=False).indices
 
 @torch.jit.script
 def mask_iou(
@@ -376,6 +376,79 @@ def get_next_points_bg(all_fp, device, max_num_pts=1, radius_size=8):
         return torch.from_numpy(np.stack(bg_points, axis=0)).to(device=device, dtype=torch.float)
     else:
         return torch.from_numpy(np.stack([_pm], axis=0)).to(device=device, dtype=torch.float)
+
+
+def _get_corrective_clicks(pred_mask, gt_mask, bg_mask, timestamp, max_num_points=2):
+    
+    pred_mask = pred_mask > 0.5
+    gt_mask = gt_mask > 0.5
+
+    # torch functionalities
+    fp = np.logical_and(pred_mask, np.logical_not(gt_mask))
+    fp = np.logical_and(fp, bg_mask)
+    fn = np.logical_and(np.logical_not(pred_mask), gt_mask)
+
+    fn_mask = np.pad(fn, ((1, 1), (1, 1)), 'constant').astype(np.uint8)
+    fp_mask = np.pad(fp, ((1, 1), (1, 1)), 'constant').astype(np.uint8)
+
+    fn_mask_dt = cv2.distanceTransform(fn_mask, cv2.DIST_L2, 5)[1:-1, 1:-1]
+    fp_mask_dt = cv2.distanceTransform(fp_mask, cv2.DIST_L2, 5)[1:-1, 1:-1]
+
+    fn_max_dist = np.max(fn_mask_dt)
+    fp_max_dist = np.max(fp_mask_dt)
+
+    is_fg = fn_max_dist > fp_max_dist
+
+    dt = fn_mask_dt if is_fg else fp_mask_dt
+    inner_mask = dt > max(fn_max_dist, fp_max_dist) / 2.0
+
+    sample_locations = np.argwhere(inner_mask)
+    _probs = [0.80,0.20]
+    num_points = 1+ np.random.choice(np.arange(max_num_points), p=_probs)
+    indices = random.sample(range(sample_locations.shape[0]), num_points)
+
+    points_coords = []
+    for index in indices:
+        coords = sample_locations[index]
+        points_coords.append([coords[0], coords[1],timestamp])
+        # points_coords.append(coords)
+    
+    return points_coords, is_fg
+
+def get_next_clicks_mq_per_object(targets, pred_output, timestamp, device, batched_num_scrbs_per_mask=None,
+                                 batched_fg_coords_list=None, batched_bg_coords_list = None
+):
+    # scibbles [bs, Q, h_gt, w_gt]
+    # device = prev_scribbles[0][0].device
+
+    # OPTIMIZATION
+    # directly take targets as input as they are already on the device
+    gt_masks_batch= [x['instances'].gt_masks.cpu().numpy() for x in targets]
+    pred_masks_batch = [x["instances"].pred_masks.cpu().numpy() for x in pred_output]
+    bg_masks_batch = [x['bg_mask'].cpu().numpy() for x in targets]
+    # padding_masks_batch = [x['padding_mask'].to(device=device) for x in targets]
+
+    # new_scribbles = []
+    for i, (gt_masks_per_image, pred_masks_per_image, bg_mask_per_image) in enumerate(zip(gt_masks_batch, pred_masks_batch, bg_masks_batch)):
+        # print(gt_masks_per_image.shape)
+        # print(pred_masks_per_image.shape)
+        indices = compute_iou(gt_masks_per_image,pred_masks_per_image)
+        # full_fg_mask = np.max(gt_masks_per_image,axis=0)
+        
+        for j in indices:
+            point_coords, is_fg = _get_corrective_clicks(pred_masks_per_image[j], gt_masks_per_image[j],
+                                                            bg_mask_per_image, timestamp = timestamp, max_num_points=2)
+            
+            if is_fg:
+                batched_fg_coords_list[i][j].extend(point_coords)
+                batched_num_scrbs_per_mask[i][j]+= len(point_coords)
+            else:
+                if batched_bg_coords_list[i] is None:
+                    batched_bg_coords_list[i] = point_coords
+                else:
+                    batched_bg_coords_list[i].extend(point_coords)
+ 
+    return batched_num_scrbs_per_mask, batched_fg_coords_list, batched_bg_coords_list   
 
 def get_corrective_points_mq(pred_mask, gt_mask, bg_mask, device, radius=8, max_num_points=2):
     

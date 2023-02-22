@@ -25,8 +25,8 @@ color_map = colormap(rgb=True, maximum=1)
 
 
 def evaluate(
-    model, data_loader, cfg, iou_threshold = 0.85,
-    max_interactions = 10
+    model, data_loader, cfg, dataset_name=None, save_stats_summary =True, 
+    iou_threshold = 0.85, max_interactions = 10
 ):
     """
     Run model on the data_loader and evaluate the metrics with evaluator.
@@ -62,14 +62,14 @@ def evaluate(
     total_compute_time = 0
     total_eval_time = 0
 
-    save_results_path = os.path.join("./all_data/evaluations/", cfg.DATASETS.TEST[0], "swin_base_/")
+    save_results_path = os.path.join("./output/evaluation/", dataset_name, "swin_base_/")
     # save_results_path += cfg.DATASETS.TEST[0]
    
-    save_evaluation_path = os.path.join("./all_data/evaluations/",  f'{cfg.DATASETS.TEST[0]}.txt')
-    if not os.path.exists(save_evaluation_path):
+    save_stats_path = os.path.join("./output/evaluation/",  f'{dataset_name}.txt')
+    if not os.path.exists(save_stats_path):
         # print("No File")
-        header = ['Model Name', 'IOU_thres', 'Avg_NOC', 'NOF', "Avg_IOU", "max_num_iters", "num_inst"]
-        with open(save_evaluation_path, 'w') as f:
+        header = ['Model Name', 'NCI', 'NFI','NOC', 'NFO', "Avg_IOU", 'IOU_thres',"max_num_iters", "num_inst"]
+        with open(save_stats_path, 'w') as f:
             writer = csv.writer(f, delimiter= "\t")
             writer.writerow(header)
 
@@ -164,7 +164,7 @@ def evaluate(
                     bg_scrbs, not_clicked_map = get_next_click_bg(comb_fp,not_clicked_map, radius=radius,num_points=1,device=orig_device)
                     total_num_interactions+=1
                     # print(torch.all(bg_scrbs==0))
-                    scrbs = prepare_scribbles(bg_scrbs,images)
+                    scrbs = prepare_scribbles(bg_scrbs.unsqueeze(0),images)
                     if scribbles[0][-1] is None:
                         scribbles[0][-1] = scrbs
                     else:
@@ -180,12 +180,12 @@ def evaluate(
                             total_num_interactions+=1
                             scrbs, not_clicked_map= get_next_click_fg(pred_masks[i], gt_masks[i],not_clicked_map)
                             
-                            scrbs = prepare_scribbles(scrbs,images)
-                            scribbles[0][i] = torch.cat([scribbles[0][i], scrbs], 0)
+                            scrbs = prepare_scribbles(scrbs.unsqueeze(0),images)
+                            scribbles[0][i] = torch.cat([scribbles[0][i], scrbs.to(device=orig_device)], 0)
                             batched_num_scrbs_per_mask[0][i] += 1
                             num_clicks_per_object[i]+=1
                             at_least_one_fg = True
-                            # break
+                            break
                     point_sampled = at_least_one_fg
                 if point_sampled:
                     num_interactions+=1
@@ -290,40 +290,40 @@ def evaluate(
 
     # header = ['Model Name', 'IOU_thres', 'Avg_NOC', 'NOF', "Avg_IOU", "max_num_iters", "num_inst"]
     model_name = cfg.MODEL.WEIGHTS.split("/")[-2]
-    Avg_NOC = np.round(total_num_interactions/total_num_instances,2)
-    Avg_IOU = np.round(total_iou/total_num_instances, 2)
-
-    row = [model_name, iou_threshold, Avg_NOC, num_failed_objects, Avg_IOU, max_interactions, total_num_instances]
-    with open(save_evaluation_path, 'a') as f:
+    NOC = np.round(total_num_interactions/total_num_instances,2)
+    NCI = sum(avg_num_clicks_per_images)/len(avg_num_clicks_per_images)
+    NFI = len(failed_images_ids)
+    Avg_IOU = np.round(total_iou/total_num_instances, 4)
+    ['Model Name', 'NCI', 'NFI','NOC', 'NFO', "Avg_IOU", 'IOU_thres',"max_num_iters", "num_inst"]
+    row = [model_name, NCI, NFI, NOC, num_failed_objects, Avg_IOU, iou_threshold, max_interactions, total_num_instances]
+    with open(save_stats_path, 'a') as f:
         writer = csv.writer(f, delimiter= "\t")
         writer.writerow(row)
-    # results = evaluator.evaluate()
-    # An evaluator may return None when not in main process.
-    # Replace it by an empty dict instead to make it easier for downstream code to handle
+   
+    if save_stats_summary:
+        summary_stats = {}
+        summary_stats["dataset"] = dataset_name
+        summary_stats["model"] = model_name
+        summary_stats["iou_threshold"] = iou_threshold
+        summary_stats["failed_images_counts"] = NFI
+        summary_stats["avg_over_total_images"] = NCI
+        summary_stats["Avg_NOC"] = NOC
+        summary_stats["Avg_IOU"] = np.round(total_iou/total_num_instances, 4)
+        summary_stats["num_failed_objects"] = num_failed_objects
+        summary_stats["failed_images_ids"] = failed_images_ids
+        summary_stats["failed_objects_areas"] = failed_objects_areas
+        summary_stats["avg_num_clicks_per_images"] = avg_num_clicks_per_images
+        summary_stats["total_computer_time"] = total_compute_time_str
+        summary_stats["time_per_intreaction_tranformer_decoder"] = time_per_intreaction_tranformer_decoder
+        summary_stats["time_per_image_features"] = time_per_image_features
+        summary_stats["time_per_image_annotation"] = time_per_image_annotation
+        
+        save_summary_path = os.path.join("./all_data/evaluations/", cfg.DATASETS.TEST[0])
+        stats_file = os.path.join(save_summary_path, f"{model_name}_{max_interactions}_max_click_th_final_updated_time_summary.pickle")
 
-    summary_stats = {}
-    summary_stats["dataset"] = cfg.DATASETS.TEST[0]
-    summary_stats["model"] = model_name
-    summary_stats["iou_threshold"] = iou_threshold
-    summary_stats["failed_images_counts"] = len(failed_images_ids)
-    summary_stats["avg_over_total_images"] = sum(avg_num_clicks_per_images)/len(avg_num_clicks_per_images)
-    summary_stats["Avg_NOC"] = np.round(total_num_interactions/total_num_instances,2)
-    summary_stats["Avg_IOU"] = np.round(total_iou/total_num_instances, 2)
-    summary_stats["num_failed_objects"] = num_failed_objects
-    summary_stats["failed_images_ids"] = failed_images_ids
-    summary_stats["failed_objects_areas"] = failed_objects_areas
-    summary_stats["avg_num_clicks_per_images"] = avg_num_clicks_per_images
-    summary_stats["total_computer_time"] = total_compute_time_str
-    summary_stats["time_per_intreaction_tranformer_decoder"] = time_per_intreaction_tranformer_decoder
-    summary_stats["time_per_image_features"] = time_per_image_features
-    summary_stats["time_per_image_annotation"] = time_per_image_annotation
-    import json
-    save_summary_path = os.path.join("./all_data/evaluations/", cfg.DATASETS.TEST[0])
-    stats_file = os.path.join(save_summary_path, f"{model_name}_{max_interactions}_max_click_th_final_updated_time_summary.pickle")
-
-    import pickle
-    with open(stats_file, 'wb') as handle:
-        pickle.dump(summary_stats, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        import pickle
+        with open(stats_file, 'wb') as handle:
+            pickle.dump(summary_stats, handle, protocol=pickle.HIGHEST_PROTOCOL)
     results = None
     if results is None:
         results = {}

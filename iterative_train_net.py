@@ -52,6 +52,8 @@ from mask2former import (
     COCOAllInstClicksDatasetMapper,
     COCOMultiInstClicksDatasetMapper,
     COCOMultiInstStuffClicksDatasetMapper,
+    COCOLVISMultiInstMQCoordsDatasetMapper,
+    DAVIS17DetmClicksDatasetMapper,
     COCOLVISMultiInstMQClicksDatasetMapper,
     COCOLVISSingleInstMQClicksDatasetMapper,
     COCOMultiInstStuffMultiQueriesClicksDatasetMapper,
@@ -61,16 +63,6 @@ from mask2former import (
 
 from mask2former import (
     COCOMvalDatasetMapper,
-    COCOInteractiveClicksDatasetMapper,
-    COCOSingleInstDatasetMapper,
-    COCOInteractiveDistractorDatasetMapper,
-    COCOInstanceNewBaselineDatasetMapper,
-    COCOPanopticNewBaselineDatasetMapper,
-    COCOPanopticInteractiveDatasetMapper,
-    COCOInstanceInteractiveDatasetMapper,
-    MaskFormerInstanceDatasetMapper,
-    MaskFormerPanopticDatasetMapper,
-    MaskFormerSemanticDatasetMapper,
     SemanticSegmentorWithTTA,
     add_maskformer2_config,
 )
@@ -94,28 +86,34 @@ class Trainer(DefaultTrainer):
 
     @classmethod
     def build_test_loader(cls,cfg,dataset_name):
-        if cfg.DATASETS.TEST[0] == "GrabCut" or cfg.DATASETS.TEST[0] == "Berkeley" or cfg.DATASETS.TEST[0] == 'coco_Mval':
-            from mask2former.data.datasets.register_grabcut import register_grabcut
+        # evaluation_dataset = cfg.DATASETS.TEST[0]
+        if dataset_name in ["GrabCut", "Berkeley", "coco_Mval", "davis_single_inst"]:
             mapper = COCOMvalDatasetMapper(cfg, False)
+            return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
+        elif dataset_name in ["davis_2017_val", "sbd_single_inst","sbd_multi_insts"]:
+            mapper = DAVIS17DetmClicksDatasetMapper(cfg, False)
             return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
         else:
             return None
         
     @classmethod
     def build_train_loader(cls, cfg):
+        datset_mapper_name = cfg.INPUT.DATASET_MAPPER_NAME
         from mask2former.utils.equal_num_instances_batch import build_detection_train_loader_equal
-        if cfg.INPUT.DATASET_MAPPER_NAME == "multi_instances_clicks_stuffs_mq":
+        if datset_mapper_name == "multi_instances_clicks_stuffs_mq":
             mapper = COCOMultiInstStuffMultiQueriesClicksDatasetMapper(cfg,True)
             return build_detection_train_loader_equal(cfg, mapper=mapper)
-        elif cfg.INPUT.DATASET_MAPPER_NAME == "single_instance_clicks_stuffs_mq":
+        elif datset_mapper_name == "single_instance_clicks_stuffs_mq":
             mapper = COCOSingleInstMultiQueriesStuffClicksDatasetMapper(cfg,True)
             return build_detection_train_loader_equal(cfg, mapper=mapper)
-        elif cfg.INPUT.DATASET_MAPPER_NAME == "coco_lvis_single_inst_stuff_mq":
+        elif datset_mapper_name == "coco_lvis_single_inst_stuff_mq":
             mapper = COCOLVISSingleInstMQClicksDatasetMapper(cfg,True)
             return build_detection_train_loader_equal(cfg, mapper=mapper)
-        elif cfg.INPUT.DATASET_MAPPER_NAME == "coco_lvis_multi_insts_stuff_mq":
-            print(cfg.INPUT.DATASET_MAPPER_NAME)
+        elif datset_mapper_name == "coco_lvis_multi_insts_stuff_mq":
             mapper = COCOLVISMultiInstMQClicksDatasetMapper(cfg,True)
+            return build_detection_train_loader_equal(cfg, mapper=mapper)
+        elif datset_mapper_name == "coco_lvis_multi_insts_stuff_coords_mq":
+            mapper = COCOLVISMultiInstMQCoordsDatasetMapper(cfg,True)
             return build_detection_train_loader_equal(cfg, mapper=mapper)
         else:
             mapper = None
@@ -240,8 +238,14 @@ class Trainer(DefaultTrainer):
             data_loader = cls.build_test_loader(cfg, dataset_name)
             
             evaluator =None
-            
-            results_i = get_avg_noc(model, data_loader, cfg, evaluator)
+            if dataset_name in ["coco_2017_val", "davis_2017_val", "sbd_multi_insts"]:
+                from mask2former.evaluation.multi_instance_evaluation import evaluate
+                results_i = evaluate(model, data_loader,cfg, dataset_name)
+            else:
+                iou_threshold = [0.90]
+                for iou in iou_threshold:
+                    for s in range(3):
+                        results_i = get_avg_noc(model, data_loader, cfg, iou_threshold = iou, dataset_name=dataset_name,sampling_strategy=s)
             results[dataset_name] = results_i
             if comm.is_main_process():
                 assert isinstance(
@@ -283,6 +287,8 @@ def setup(args):
     add_maskformer2_config(cfg)
     cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
+    # if args.eval_only:
+    #     cfg.SEED = 46699430
     # cfg.OUTPUT_DIR = "./all_data/new_models/class_agnostic"
     cfg.freeze()
     default_setup(cfg, args)
@@ -295,7 +301,7 @@ def main(args):
 
     # os.environ["NCCL_ASYNC_ERROR_HANDLING"] = str(1)
     # os.environ["NCCL_P2P_DISABLE"] = str(1)
-    #  import debugpy
+    # import debugpy
 
     # debugpy.listen(5678)
     # print("Waiting for debugger")
@@ -303,22 +309,23 @@ def main(args):
     
     if args.eval_only:
         model = Trainer.build_model(cfg)
-        # DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
-        #     cfg.MODEL.WEIGHTS, resume=args.resume
-        # )
+        DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
+            cfg.MODEL.WEIGHTS, resume=args.resume
+        )
 
         # model = DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR)._load_file(
         #     cfg.MODEL.WEIGHTS
         # )
 
         # model = model['model']
-        model.eval()
-        model.load_state_dict(torch.load(cfg.MODEL.WEIGHTS)["model"])
+        # model.eval()
+        # model.load_state_dict(torch.load(cfg.MODEL.WEIGHTS)["model"])
+        # model = torch.load(cfg.MODEL.WEIGHTS)['model']
         res = Trainer.test(cfg, model)
-        if cfg.TEST.AUG.ENABLED:
-            res.update(Trainer.test_with_TTA(cfg, model))
-        if comm.is_main_process():
-            verify_results(cfg, res)
+        # if cfg.TEST.AUG.ENABLED:
+        #     res.update(Trainer.test_with_TTA(cfg, model))
+        # if comm.is_main_process():
+        #     verify_results(cfg, res)
         return res
 
     # import pdb; pdb.set_trace()
@@ -327,8 +334,8 @@ def main(args):
     # breakpoint()
     trainer.resume_or_load(resume=args.resume)
     #Save custom config
-    with open(cfg.OUTPUT_DIR + "/iterative_cfg.yaml", "w") as f: 
-        f.write(cfg.dump())
+    # with open(cfg.OUTPUT_DIR + "/iterative_cfg.yaml", "w") as f: 
+    #     f.write(cfg.dump())
     # trainer.resume_or_load(resume=True)
 
     return trainer.train()

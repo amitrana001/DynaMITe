@@ -212,11 +212,7 @@ class COCOMvalDatasetMapper:
                 new_instances.set('gt_boxes', instances.gt_boxes) 
                    
                 gt_masks = gt_masks
-                ignore_masks = None
-                if 'ignore_mask' in dataset_dict:
-                    ignore_masks = dataset_dict['ignore_mask'].to(device='cpu', dtype = torch.uint8)
-                    ignore_masks =  trans(ignore_masks)
-                fg_scrbs, num_scrbs_per_mask, coords = get_gt_points_determinstic(gt_masks, max_num_points=1, ignore_masks=ignore_masks)
+                fg_scrbs, num_scrbs_per_mask, coords = get_gt_points_determinstic(gt_masks, all_masks=all_masks, max_num_points=1)
                 # pt_sampled_dict[dataset_dict['image_id']].append(coords)
                 dataset_dict['coords'] = coords
                 dataset_dict["fg_scrbs"] = fg_scrbs

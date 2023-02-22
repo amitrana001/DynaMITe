@@ -2,101 +2,27 @@
 # Modified by Bowen Cheng from https://github.com/facebookresearch/detr/blob/master/d2/detr/dataset_mapper.py
 import copy
 import logging
-import os
+
 import numpy as np
 import torch
-import torchvision
-import random
+
 from detectron2.config import configurable
 from detectron2.data import detection_utils as utils
 from detectron2.data import transforms as T
 from detectron2.data.transforms import TransformGen
 from detectron2.structures import BitMasks, Instances
 from detectron2.structures.masks import PolygonMasks
-import pickle
-from torchvision import transforms
+
 from pycocotools import mask as coco_mask
-from mask2former.data.scribble.gen_scribble import get_scribble_gt, get_scribble_gt_mask
-# from coco_instance_interactive_dataset_mapper import filter_instances, build_transform_gen, convert_coco_poly_to_mask
-from mask2former.data.points.annotation_generator import get_gt_points_determinstic, generate_point_to_blob_masks_eval_deterministic
 from mask2former.data.scribble.gen_scribble import get_scribble_eval, get_scribble_gt_mask
+from mask2former.data.dataset_mappers.mapper_utils.datamapper_utils import convert_coco_poly_to_mask, filter_instances, build_transform_gen
 
-__all__ = ["COCOMvalDatasetMapper"]
+from mask2former.data.points.annotation_generator import get_gt_points_determinstic, generate_point_to_blob_masks_eval_deterministic
 
-def convert_coco_poly_to_mask(segmentations, height, width):
-    masks = []
-    for polygons in segmentations:
-        rles = coco_mask.frPyObjects(polygons, height, width)
-        # area = coco_mask.area(rles)
-        # print(area)
-        # if area < min_area:
-        #     continue
-        mask = coco_mask.decode(rles)
-        if len(mask.shape) < 3:
-            mask = mask[..., None]
-        mask = torch.as_tensor(mask, dtype=torch.uint8)
-        mask = mask.any(dim=2)
-        masks.append(mask)
-    if masks:
-        masks = torch.stack(masks, dim=0)
-    else:
-        masks = torch.zeros((0, height, width), dtype=torch.uint8)
-    return masks
-
-def filter_instances(instances, min_area):
-    # num_instances = len(instances.gt_masks)
-    polygon_masks = PolygonMasks(instances.gt_masks.polygons)
-    masks_area = polygon_masks.area()
-    # print(f"instances: {len(instances)}, masks: {len(masks_area)},{masks_area.shape}")
-    # num_instances = len(masks_area)
-    m = []
-    for mask_area in masks_area:
-        m.append(mask_area > min_area)
-    m = torch.tensor(m).type(torch.bool)
-    # print(m)
-    return instances[m]
-
-
-def build_transform_gen(cfg, is_train):
-    """
-    Create a list of default :class:`Augmentation` from config.
-    Now it includes resizing and flipping.
-    Returns:
-        list[Augmentation]
-    """
-    if not is_train:
-        augmentation = []
-        augmentation.append(T.ResizeShortestEdge(
-            [cfg.INPUT.MIN_SIZE_TEST, cfg.INPUT.MIN_SIZE_TEST], cfg.INPUT.MAX_SIZE_TEST
-        ))
-        return augmentation
-
-    assert is_train, "Only support training augmentation"
-    image_size = cfg.INPUT.IMAGE_SIZE
-    min_scale = cfg.INPUT.MIN_SCALE
-    max_scale = cfg.INPUT.MAX_SCALE
-
-    augmentation = []
-
-    if cfg.INPUT.RANDOM_FLIP != "none":
-        augmentation.append(
-            T.RandomFlip(
-                horizontal=cfg.INPUT.RANDOM_FLIP == "horizontal",
-                vertical=cfg.INPUT.RANDOM_FLIP == "vertical",
-            )
-        )
-
-    augmentation.extend([
-        T.ResizeScale(
-            min_scale=min_scale, max_scale=max_scale, target_height=image_size, target_width=image_size
-        ),
-        T.FixedSizeCrop(crop_size=(image_size, image_size)),
-    ])
-
-    return augmentation
+__all__ = ["DAVIS17SBDEvalMQClicksDatasetMapper"]
 
 # This is specifically designed for the COCO dataset.
-class COCOMvalDatasetMapper:
+class DAVIS17SBDEvalMQClicksDatasetMapper:
     """
     A callable which takes a dataset dict in Detectron2 Dataset format,
     and map it into a format used by MaskFormer.
@@ -156,8 +82,6 @@ class COCOMvalDatasetMapper:
         Returns:
             dict: a format that builtin models in detectron2 accept
         """
-
-        from detectron2.data import transforms as T
         dataset_dict = copy.deepcopy(dataset_dict)  # it will be modified by code below
         image = utils.read_image(dataset_dict["file_name"], format=self.img_format)
         utils.check_image_size(dataset_dict, image)
@@ -183,42 +107,62 @@ class COCOMvalDatasetMapper:
             # USER: Modify this if you want to keep them for some reason.
             # dataset_dict.pop("annotations", None)
             # return dataset_dict
-        # if os.path.exists("output/pt_sampled_dict1.pickle"):
-        #     with open("output/pt_sampled_dict1.pickle", 'rb') as f:
-        #         pt_sampled_dict = pickle.load(f)
-        #     os.remove("output/pt_sampled_dict1.pickle")
-        # else:
-        #     from collections import defaultdict
-        #     pt_sampled_dict = defaultdict(list)
-        if "instances" in dataset_dict:
+
+        if "annotations" in dataset_dict:
+            # USER: Modify this if you want to keep them for some reason.
+            for anno in dataset_dict["annotations"]:
+                # Let's always keep mask
+                # if not self.mask_on:
+                #     anno.pop("segmentation", None)
+                anno.pop("keypoints", None)
+
+            # USER: Implement additional transformations if you have other types of data
+            annos = [
+                utils.transform_instance_annotations(obj, transforms, image_shape)
+                for obj in dataset_dict.pop("annotations")
+                if obj.get("iscrowd", 0) == 0
+            ]
+            # NOTE: does not support BitMask due to augmentation
+            # Current BitMask cannot handle empty objects
+            instances = utils.annotations_to_instances(annos, image_shape,  mask_format="bitmask")
+            # After transforms such as cropping are applied, the bounding box may no longer
+            # tightly bound the object. As an example, imagine a triangle object
+            # [(0,0), (2,0), (0,2)] cropped by a box [(1,0),(2,2)] (XYXY format). The tight
+            # bounding box of the cropped triangle should be [(1,0),(2,1)], which is not equal to
+            # the intersection of original bounding box and the cropping box.
+            if not hasattr(instances, 'gt_masks'):
+                return None
+            instances.gt_boxes = instances.gt_masks.get_bounding_boxes()
+            # boxes_area = instances.gt_boxes.area()
+            # Need to filter empty instances first (due to augmentation)
+            instances = utils.filter_empty_instances(instances)
+            # instances = filter_instances(instances, min_area = 400.0)
             
-            instances = dataset_dict['instances']
             if len(instances) == 0:
-                # print("zero instances after filter")
+                # print("here")
                 return None
             # Generate masks from polygon
-            # print(f"instances_after_filter:{len(instances)}")
             h, w = instances.image_size
-            
+            # image_size_xyxy = torch.as_tensor([w, h, w, h], dtype=torch.float)
+            # no_gt_masks = False
+            # polygon_masks = PolygonMasks(instances.gt_masks.polygons)
+            # gt_masks_area = polygon_masks.area()
+            # dataset_dict['polygons'] = instances.gt_masks
             if hasattr(instances, 'gt_masks'):
-                trans = torchvision.transforms.Resize(image_shape)
                 gt_masks = instances.gt_masks
-                gt_masks = trans(gt_masks)
-                new_instances = Instances(image_size=image_shape)
+                # gt_masks = convert_coco_poly_to_mask(gt_masks.polygons, h, w)
+                instances.gt_masks = gt_masks.tensor
+
                 all_masks = dataset_dict["padding_mask"].int()
+                # filterd_gt_masks = []
                 
-                new_instances.set('gt_masks', gt_masks)
-                new_instances.set('gt_classes', instances.gt_classes)
-                new_instances.set('gt_boxes', instances.gt_boxes) 
-                   
-                gt_masks = gt_masks
-                ignore_masks = None
-                if 'ignore_mask' in dataset_dict:
-                    ignore_masks = dataset_dict['ignore_mask'].to(device='cpu', dtype = torch.uint8)
-                    ignore_masks =  trans(ignore_masks)
-                fg_scrbs, num_scrbs_per_mask, coords = get_gt_points_determinstic(gt_masks, max_num_points=1, ignore_masks=ignore_masks)
-                # pt_sampled_dict[dataset_dict['image_id']].append(coords)
-                dataset_dict['coords'] = coords
+                for gt_mask in gt_masks:
+                    all_masks = torch.logical_or(all_masks, gt_mask)
+                # print("gt_masks:",gt_masks.shape)
+                # print("all_masks:",all_masks.shape)
+                gt_masks = gt_masks.tensor
+                fg_scrbs, num_scrbs_per_mask, coords = get_gt_points_determinstic(gt_masks, max_num_points=1)
+                
                 dataset_dict["fg_scrbs"] = fg_scrbs
                 dataset_dict["num_scrbs_per_mask"] = num_scrbs_per_mask
                 dataset_dict["bg_scrbs"] = None
@@ -227,12 +171,10 @@ class COCOMvalDatasetMapper:
                 dataset_dict["bg_mask"] = (~all_masks).to(dtype = torch.uint8)
 
                 dataset_dict["scrbs_count"] = dataset_dict["fg_scrbs"][0].shape[0] #+ dataset_dict["bg_scrbs"].shape[0]
-                # with open("output/pt_sampled_dict1.pickle", 'wb') as handle:
-                #     pickle.dump(pt_sampled_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                
             else:
                 return None
-            
-            dataset_dict["instances"] = new_instances
-            
+
+            dataset_dict["instances"] = instances
 
         return dataset_dict

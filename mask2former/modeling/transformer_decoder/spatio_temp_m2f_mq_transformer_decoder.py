@@ -1,12 +1,15 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 # Modified by Bowen Cheng from: https://github.com/facebookresearch/detr/blob/master/models/detr.py
 import logging
+import os
 import time as timer
 import random
 import einops
+import numpy as np
 import fvcore.nn.weight_init as weight_init
 from typing import Optional
 import torch
+import detectron2.utils.comm as comm
 from torch import nn, Tensor
 from torch.nn import functional as F
 from detectron2.utils.memory import retry_if_cuda_oom
@@ -17,9 +20,28 @@ from einops import repeat
 from .position_encoding import PositionEmbeddingSine
 from detectron2.modeling.postprocessing import sem_seg_postprocess
 from .maskformer_transformer_decoder import TRANSFORMER_DECODER_REGISTRY
-from .descriptor_initializer import AvgPoolingInitializer
-from mask2former.utils import get_new_scribbles_opt, preprocess_batch_data, get_new_points_mq,get_new_points_mq_per_obj
+from .descriptor_initializer import AvgClicksPoolingInitializer, AvgPoolingInitializer
+from mask2former.utils import get_new_scribbles_opt, preprocess_batch_data, get_new_points_mq,get_new_points_mq_per_obj,get_next_clicks_mq_per_object
+from mask2former.utils.train_sampling_utils import get_next_clicks_mq
+import cv2
+from detectron2.utils.visualizer import Visualizer
 
+def get_palette(num_cls):
+    palette = np.zeros(3 * num_cls, dtype=np.int32)
+
+    for j in range(0, num_cls):
+        lab = j
+        i = 0
+
+        while lab > 0:
+            palette[j*3 + 0] |= (((lab >> 0) & 1) << (7-i))
+            palette[j*3 + 1] |= (((lab >> 1) & 1) << (7-i))
+            palette[j*3 + 2] |= (((lab >> 2) & 1) << (7-i))
+            i = i + 1
+            lab >>= 3
+
+    return palette.reshape((-1, 3))
+color_map = get_palette(80)[1:]
 class SelfAttentionLayer(nn.Module):
 
     def __init__(self, d_model, nhead, dropout=0.0,
@@ -211,43 +233,9 @@ class MLP(nn.Module):
 
 
 @TRANSFORMER_DECODER_REGISTRY.register()
-class IterativeM2FTransformerDecoderMQ(nn.Module):
+class SpatioTempM2FTransformerDecoderMQ(nn.Module):
 
     _version = 2
-
-    # def _load_from_state_dict(
-    #     self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs
-    # ):
-
-    #     version = local_metadata.get("version", None)
-    #     if version is None or version < 2:
-    #         # Do not warn if train from scratch
-    #         scratch = True
-    #         logger = logging.getLogger(__name__)
-    #         for k in list(state_dict.keys()):
-    #             newk = k
-    #             if "static_query" in k:
-    #                 newk = k.replace("static_query", "query_feat")
-    #             if newk != k:
-    #                 state_dict[newk] = state_dict[k]
-    #                 del state_dict[k]
-    #                 scratch = False
-
-    #         if not scratch:
-    #             logger.warning(
-    #                 f"Weight format of {self.__class__.__name__} have changed! "
-    #                 "Please upgrade your models. Applying automatic conversion now ..."
-    #             )
-    #     super()._load_from_state_dict( state_dict, prefix, local_metadata,
-    #                                 strict, missing_keys, unexpected_keys, error_msgs
-    #                                 )   
-        # if 'sem_seg_head.predictor.query_embed' in state_dict:
-        #     state_dict['sem_seg_head.predictor.query_embed.weight'] = \
-        #     state_dict.pop('sem_seg_head.predictor.query_embed')[None]
-        
-        # if 'sem_seg_head.predictor.bg_query' in state_dict:
-        #     state_dict['sem_seg_head.predictor.bg_query.weight'] = \
-        #     state_dict.pop('sem_seg_head.predictor.bg_query')[None]
 
     @configurable
     def __init__(
@@ -263,11 +251,13 @@ class IterativeM2FTransformerDecoderMQ(nn.Module):
         random_bg_queries: bool,
         query_initializer: str,
         use_pos_coords: bool,
+        use_time_coords: bool,
         use_rev_cross_attn: bool,
         rev_cross_attn_num_layers: int,
         rev_cross_attn_scale: float,
         num_static_bg_queries: int,
         use_point_clicks: bool,
+        per_obj_sampling: bool,
         num_classes: int,
         hidden_dim: int,
         num_queries: int,
@@ -315,6 +305,9 @@ class IterativeM2FTransformerDecoderMQ(nn.Module):
         self.num_static_bg_queries = num_static_bg_queries
         self.use_point_clicks = use_point_clicks
         
+        self.per_obj_sampling = per_obj_sampling
+        self.use_time_coords = use_time_coords
+
         # Reverse Cross Attn
         self.use_rev_cross_attn = use_rev_cross_attn
         self.rev_cross_attn_num_layers = rev_cross_attn_num_layers
@@ -373,7 +366,7 @@ class IterativeM2FTransformerDecoderMQ(nn.Module):
         self.decoder_norm = nn.LayerNorm(hidden_dim)
 
         self.multi_scale = True if query_initializer == "multi_scale" else False
-        self.query_descriptors_initializer = AvgPoolingInitializer(multi_scale=self.multi_scale)
+        self.query_descriptors_initializer = AvgClicksPoolingInitializer(multi_scale=self.multi_scale)
         
         if self.concat_coord_mask_features:
             self.coordinates_prev_mask = nn.Sequential(
@@ -395,7 +388,7 @@ class IterativeM2FTransformerDecoderMQ(nn.Module):
         )
 
         self.use_pos_coords = use_pos_coords
-        if self.use_pos_coords and (not self.random_bg_queries):
+        if self.use_pos_coords:
             self.ca_qpos_sine_proj = nn.Linear(hidden_dim, hidden_dim)
         # self.descriptor_projection = nn.linear()
         # learnable query p.e.
@@ -431,7 +424,7 @@ class IterativeM2FTransformerDecoderMQ(nn.Module):
     def _reset_parameters(self):
         nn.init.normal_(self.query_embed)
         nn.init.normal_(self.static_bg_pe)
-        # # nn.init.kaiming_uniform_(self.static_bg_query, a=1)
+        # # # nn.init.kaiming_uniform_(self.static_bg_query, a=1)
         nn.init.xavier_uniform_(self.static_bg_query)
 
     @classmethod
@@ -461,8 +454,10 @@ class IterativeM2FTransformerDecoderMQ(nn.Module):
         ret["concat_coord_image_features"]=cfg.ITERATIVE.TRAIN.CONCAT_COORD_IMAGE_FEATURES
         ret["random_bg_queries"]=cfg.ITERATIVE.TRAIN.RANDOM_BG_QUERIES
         ret["use_pos_coords"] = cfg.ITERATIVE.TRAIN.USE_POS_COORDS
+        ret["use_time_coords"] = cfg.ITERATIVE.TRAIN.USE_TIME_COORDS
         ret["num_static_bg_queries"] = cfg.ITERATIVE.TRAIN.NUM_STATIC_BG_QUERIES
         ret["use_point_clicks"] = cfg.ITERATIVE.TRAIN.USE_POINTS
+        ret["per_obj_sampling"] = cfg.ITERATIVE.TRAIN.PER_OBJ_SAMPLING
         # NOTE: because we add learnable query features which requires supervision,
         # we add minus 1 to decoder layers to be consistent with our loss
         # implementation: that is, number of auxiliary losses is always
@@ -478,11 +473,11 @@ class IterativeM2FTransformerDecoderMQ(nn.Module):
         return ret
 
     def forward(self, data, targets, images, num_instances, x, mask_features, mask = None,
-                 scribbles=None, prev_mask_logits=None, batched_num_scrbs_per_mask=None):
+                 prev_mask_logits=None, batched_num_scrbs_per_mask=None,
+                 batched_fg_coords_list = None, batched_bg_coords_list = None):
         # x is a list of multi-scale feature
         assert len(x) == self.num_feature_levels
-        # print("Scribbles:",scribbles.shape)
-        assert scribbles is not None, "scribbles can't be None"
+        
         src = []
         pos = []
         size_list = []
@@ -505,23 +500,39 @@ class IterativeM2FTransformerDecoderMQ(nn.Module):
             if self.accumulate_loss:
                 prev_output = None
                 num_iters = random.randint(0,self.max_num_interactions)
-                # num_iters=0
+                # num_iters=3
+                # if comm.is_main_process():
+                #     self.visualization(data, prev_output, batched_fg_coords_list[:], batched_bg_coords_list[:],
+                #     alpha_blend=0.6, num_iter = 0)
                 
-                for _ in range(num_iters):
-                    prev_output = self.iterative_batch_forward(x, src, pos, size_list, mask_features, scribbles, prev_mask_logits,batched_num_scrbs_per_mask)
+                for i in range(num_iters):
+                    prev_output = self.iterative_batch_forward(x, src, pos, size_list, images, mask_features, prev_mask_logits,
+                                                               batched_num_scrbs_per_mask, batched_fg_coords_list, 
+                                                               batched_bg_coords_list
+                    )
                     prev_mask_logits = prev_output['pred_masks']
                     # print("before:",batched_num_scrbs_per_mask)
                     processed_results = self.process_results(data, images, prev_output, num_instances, batched_num_scrbs_per_mask)
                     if self.use_point_clicks:
-                        scribbles, batched_num_scrbs_per_mask = get_new_points_mq_per_obj(data, processed_results, scribbles,
-                                                                              random_bg_queries=self.random_bg_queries,
-                                                                              batched_num_scrbs_per_mask = batched_num_scrbs_per_mask)
+                        # scribbles, batched_num_scrbs_per_mask = get_new_points_mq_per_obj(data, processed_results, scribbles,
+                        #                                                       random_bg_queries=self.random_bg_queries,
+                        #                                                       batched_num_scrbs_per_mask = batched_num_scrbs_per_mask)
+                        batched_num_scrbs_per_mask, batched_fg_coords_list, batched_bg_coords_list = get_next_clicks_mq(data, processed_results,i+1, src[0].device,
+                                                                            batched_num_scrbs_per_mask,batched_fg_coords_list, batched_bg_coords_list,
+                                                                            per_obj_sampling=self.per_obj_sampling)
+                        # if comm.is_main_process():
+                        #     self.visualization(data, processed_results, batched_fg_coords_list[:], batched_bg_coords_list[:],
+                        #     alpha_blend=0.6, num_iter = i+1)
                     else:
                         scribbles = get_new_scribbles_opt(data, processed_results, scribbles,random_bg_queries=self.random_bg_queries)
                     # print("after:",batched_num_scrbs_per_mask)
-            outputs = self.iterative_batch_forward(x, src, pos, size_list, mask_features, scribbles, prev_mask_logits,batched_num_scrbs_per_mask)
+            outputs = self.iterative_batch_forward(x, src, pos, size_list, images, mask_features, prev_mask_logits,
+                                                    batched_num_scrbs_per_mask, batched_fg_coords_list, 
+                                                    batched_bg_coords_list
+                    )
         else:
-            outputs = self.iterative_batch_forward(x, src, pos, size_list, mask_features, scribbles, prev_mask_logits,batched_num_scrbs_per_mask)
+            outputs = self.iterative_batch_forward(x, src, pos, size_list, mask_features, scribbles,prev_mask_logits,
+                                                   batched_num_scrbs_per_mask, batched_fg_coords_list, batched_bg_coords_list)
         return outputs, batched_num_scrbs_per_mask
 
     def forward_prediction_heads(self, output, mask_features, attn_mask_target_size):
@@ -551,23 +562,30 @@ class IterativeM2FTransformerDecoderMQ(nn.Module):
 
         return outputs_class, outputs_mask, attn_mask
 
-    def iterative_batch_forward(self, x, src, pos, size_list, mask_features, scribbles,
-                                prev_mask_logits=None, batched_num_scrbs_per_mask=None):
+    def iterative_batch_forward(self, x, src, pos, size_list, images, mask_features, prev_mask_logits=None,
+                                batched_num_scrbs_per_mask=None, batched_fg_coords_list=None,
+                                batched_bg_coords_list=None):
 
         _, bs, _ = src[0].shape
-        
+        B, C, H, W = mask_features.shape
+        height = 4*H
+        width = 4*W
         if self.use_static_bg_queries:
-            if batched_num_scrbs_per_mask is not None:
-                new_scribbles = []
-                for scrbs in scribbles:
-                    if scrbs[-1] is not None:
-                        new_scribbles.append(torch.cat(scrbs))
-                    else:
-                        new_scribbles.append(torch.cat(scrbs[:-1]))
-            max_scrbs_batch = max([scrbs.shape[0] for scrbs in new_scribbles])
-            descriptors = self.query_descriptors_initializer(x, new_scribbles, random_bg_queries=self.random_bg_queries )
+            # if batched_num_scrbs_per_mask is not None:
+            #     new_scribbles = []
+            #     for scrbs in scribbles:
+            #         if scrbs[-1] is not None:
+            #             new_scribbles.append(torch.cat(scrbs))
+            #         else:
+            #             new_scribbles.append(torch.cat(scrbs[:-1]))
+            # max_scrbs_batch = max([scrbs.shape[0] for scrbs in new_scribbles])
+
+            # _,height,width = new_scribbles[0].shape
+            descriptors = self.query_descriptors_initializer(x, batched_fg_coords_list, batched_bg_coords_list, height=height, 
+                                                            width=width, random_bg_queries=self.random_bg_queries)
+            max_queries_batch = max([desc.shape[1] for desc in descriptors])
             for i, desc in enumerate(descriptors):
-                bg_queries = repeat(self.bg_query, "C -> 1 L C", L=max_scrbs_batch-desc.shape[1])
+                bg_queries = repeat(self.bg_query, "C -> 1 L C", L=max_queries_batch-desc.shape[1])
                 # bg_queries = repeat(self.bg_query, "C -> 1 L C", L=self.num_static_bg_queries)
                 descriptors[i] = torch.cat((descriptors[i], bg_queries), dim=1)
             output = torch.cat(descriptors, dim=0)
@@ -577,66 +595,26 @@ class IterativeM2FTransformerDecoderMQ(nn.Module):
             query_embed = torch.cat((query_embed,static_bg_pe),dim=0)
             static_bg_queries = repeat(self.static_bg_query, "Bg C -> N Bg C", N=bs)
             output = torch.cat((output,static_bg_queries), dim=1)
-        
-        # if self.random_bg_queries:
-        #     if batched_num_scrbs_per_mask is not None:
-        #         new_scribbles = []
-        #         for scrbs in scribbles:
-        #             if scrbs[-1] is not None:
-        #                 new_scribbles.append(torch.cat(scrbs))
-        #             else:
-        #                 new_scribbles.append(torch.cat(scrbs[:-1]))
-        #     max_scrbs_batch = max([scrbs.shape[0] for scrbs in new_scribbles]) + self.num_static_bg_queries
-        #     descriptors = self.query_descriptors_initializer(x, new_scribbles, random_bg_queries=self.random_bg_queries )
-        #     for i, desc in enumerate(descriptors):
-        #         bg_queries = repeat(self.bg_query, "C -> 1 L C", L=max_scrbs_batch-desc.shape[1])
-        #         # bg_queries = repeat(self.bg_query, "C -> 1 L C", L=self.num_static_bg_queries)
-        #         descriptors[i] = torch.cat((descriptors[i], bg_queries), dim=1)
-        #     output = torch.cat(descriptors, dim=0)
-        # else:
-        #     output = self.query_descriptors_initializer(x,scribbles)
+
         # num_scrbs = output.shape[0]
         Bs, num_scrbs, _ = output.shape
         # NxQxC -> QxNxC
         output = self.queries_nonlinear_projection(output).permute(1,0,2)
         # query positional embedding QxNxC
         # query_embed = repeat(self.query_embed, "C -> Q N C", N=bs, Q=num_scrbs)
-        if self.use_pos_coords and (not self.random_bg_queries):
-            scrbs_coords = self.get_random_coord_scrbs(scribbles) # bsxQx2
-            pos_coord_embed = self.gen_sineembed_for_position(scrbs_coords.permute(1,0,2)) # Q x bs x C
-            pos_coord_embed = self.ca_qpos_sine_proj(pos_coord_embed)
+        if self.use_pos_coords:
+            scrbs_coords = self.get_pos_tensor_coords(batched_fg_coords_list, batched_bg_coords_list,
+                                                    num_scrbs, height, width, output.device
+                            ) # bsxQx3
+            pos_coord_embed = self.gen_sineembed_for_position(scrbs_coords.permute(1,0,2), use_timestamp=self.use_time_coords) # Q x bs x C
+            pos_coord_embed = self.ca_qpos_sine_proj(pos_coord_embed.to(query_embed.dtype))
             
             query_embed = query_embed + pos_coord_embed
 
         # query_embed = None
         predictions_class = []
         predictions_mask = []
-        if self.concat_coord_mask_features:
-            mask_features = einops.repeat(mask_features, "B C H W -> B Q C H W", Q=num_scrbs)
-            mask_features = einops.rearrange(mask_features, "B Q C H W -> (B Q) C H W")
-            # scribbles-> B Q H W
-            # prev_mask_logits-> B Q H W
-            if self.random_bg_queries:
-                scribbles = [torch.cat((s, torch.zeros((num_scrbs-s.shape[0],s.shape[-2], s.shape[-1]),device=output.device)),dim=0) for s in scribbles]
-                scribbles = torch.stack(scribbles,0)
-            scribbles = F.interpolate(scribbles, size=(mask_features.shape[-2], mask_features.shape[-1]),
-                                      mode="bilinear", align_corners=False)
-            scribbles = einops.rearrange(scribbles, "B Q H W -> (B Q) 1 H W")
-            
-            if prev_mask_logits is None:
-                prev_mask_logits = torch.zeros_like(scribbles)
-            else:
-                prev_mask_logits = einops.rearrange(prev_mask_logits, "B Q H W -> (B Q) 1 H W")
-            # (B Q) C+2 H W
-            # print(mask_features.shape)
-            # print(scribbles.shape)
-            # print(prev_mask_logits.shape)
-            # scribbles = torch.zeros_like(scribbles)
-            mask_features = torch.cat((mask_features, prev_mask_logits, scribbles), dim=1)
-            mask_features = self.coordinates_prev_mask(mask_features)
-            del scribbles
-            del prev_mask_logits
-
+       
         # prediction heads on learnable query features
         outputs_class, outputs_mask, attn_mask = self.forward_prediction_heads(output, mask_features, attn_mask_target_size=size_list[0])
         predictions_class.append(outputs_class)
@@ -717,15 +695,19 @@ class IterativeM2FTransformerDecoderMQ(nn.Module):
         else:
             return [{"pred_masks": b} for b in outputs_seg_masks[:-1]]
     
-    def gen_sineembed_for_position(self, pos_tensor):
-        # n_query, bs, _ = pos_tensor.size()
+    def gen_sineembed_for_position(self, pos_tensor, use_timestamp = False):
+        # n_query, bs, 3 = pos_tensor.size()
         # sineembed_tensor = torch.zeros(n_query, bs, 256)
         import math
         scale = 2 * math.pi
-        dim_t = torch.arange(128, dtype=torch.float32, device=pos_tensor.device)
+        dim_t = torch.arange(128, dtype=torch.float, device=pos_tensor.device)
         dim_t = 10000 ** (2 * torch.div(dim_t, 2, rounding_mode='floor') / 128)
-        x_embed = pos_tensor[:, :, 0] * scale
-        y_embed = pos_tensor[:, :, 1] * scale
+        x_embed = pos_tensor[:, :, 1] * scale
+        y_embed = pos_tensor[:, :, 0] * scale
+        if use_timestamp:
+            t_embed = pos_tensor[:, :, 2] * scale
+            y_embed += t_embed
+            x_embed += x_embed
         pos_x = x_embed[:, :, None] / dim_t
         pos_y = y_embed[:, :, None] / dim_t
         pos_x = torch.stack((pos_x[:, :, 0::2].sin(), pos_x[:, :, 1::2].cos()), dim=3).flatten(2)
@@ -733,23 +715,29 @@ class IterativeM2FTransformerDecoderMQ(nn.Module):
         pos = torch.cat((pos_y, pos_x), dim=2)
         return pos
     
-    def get_random_coord_scrbs(self, scribbles):
+    def get_pos_tensor_coords(self, batched_fg_coords_list, batched_bg_coords_list, num_queries, height, width, device):
 
-        #scribbles: Bs x num_queris x H x W
+        #batched_fg_coords_list: batch x (list of list of fg coords) [y,x,t]
 
-        # points: Bs x num_queries x 2
-
-        B, Q, h, w = scribbles.shape
-        a = einops.rearrange(scribbles, "B Q H W -> (B Q) H W")
-        points = []
-        for s in scribbles:
-            p = torch.nonzero(s)
-            p = p[torch.randint(0,p.shape[0],(1,))]
-            points.append(torch.tensor([p[0,1]/w, p[0,0]/h]).view(1,2))
-        points = torch.stack(points,0).to(device = scribbles.device)      
-        points = einops.rearrange(points, "(B Q) 1 X -> B Q X",B=B)
+        # return
+        # points: Bs x num_queries x 3 
+        B = len(batched_fg_coords_list)
         
-        return points
+        pos_tensor = []
+        
+        for i, fg_coords_per_image in enumerate(batched_fg_coords_list):
+            coords_per_image  = []
+            for fg_coords_per_mask in fg_coords_per_image:
+                for coords in fg_coords_per_mask:
+                    coords_per_image.append([coords[0]/width, coords[1]/height, coords[2]])
+            if batched_bg_coords_list[i] is not None:
+                for coords in batched_bg_coords_list[i]:
+                    coords_per_image.append([coords[0]/width, coords[1]/height, coords[2]])
+            coords_per_image.extend([[0,0,0]] * (num_queries-len(coords_per_image)))
+            pos_tensor.append(torch.tensor(coords_per_image,device=device))
+        # pos_tensor = torch.tensor(pos_tensor,device=device)
+        pos_tensor = torch.stack(pos_tensor)
+        return pos_tensor
     
     @torch.no_grad()
     def create_spatial_grid(height, width, dtype=torch.float32, device="cpu"):
@@ -851,3 +839,48 @@ class IterativeM2FTransformerDecoderMQ(nn.Module):
             result.scores = scores_per_image * mask_scores_per_image
             result.pred_classes = labels_per_image
         return result
+
+    def visualization(self, batched_inputs, prev_output, batched_fg_coords_list,batched_bg_coords_list,
+                  alpha_blend=0.6, num_iter = 0):
+        image = np.asarray(batched_inputs[0]['image'].detach().permute(1,2,0))
+        import copy
+        image = copy.deepcopy(image)
+        visualizer = Visualizer(image, metadata=None)
+        if prev_output is not None:
+            import torchvision.transforms.functional as F
+            pred_masks = F.resize(prev_output[0]['instances'].pred_masks.detach().to(device= 'cpu',dtype=torch.uint8), image.shape[:2])
+        else:
+            pred_masks = batched_inputs[0]['instances'].gt_masks.detach()
+        c = []
+        for i in range(pred_masks.shape[0]):
+            # c.append(color_map[2*(i)+2]/255.0)
+            c.append(color_map[i]/255.0)
+        # pred_masks = np.asarray(pred_masks).astype(np.bool_)
+        vis = visualizer.overlay_instances(masks = pred_masks, assigned_colors=c, alpha=alpha_blend)
+        # [Optional] prepare labels
+
+        image = vis.get_image()
+        # # Laminate your image!
+        total_colors = len(color_map)-1
+        
+        h,w = image.shape[:2]
+        for j, fg_coords_per_mask in enumerate(batched_fg_coords_list[0]):
+            for i, coords in enumerate(fg_coords_per_mask):
+                color = np.array(color_map[total_colors-5*j-4], dtype=np.uint8)
+                color = ( int (color [ 0 ]), int (color [ 1 ]), int (color [ 2 ])) 
+                if i==0:
+                    image = cv2.circle(image, (int(coords[1]), int(coords[0])), 8, tuple(color), -1)
+                else:
+                    image = cv2.circle(image, (int(coords[1]), int(coords[0])), 3, tuple(color), -1)
+        
+        if batched_bg_coords_list[0]:
+            for i, coords in enumerate(batched_bg_coords_list[0]):
+                color = np.array([255,0,0], dtype=np.uint8)
+                color = ( int (color [ 0 ]), int (color [ 1 ]), int (color [ 2 ])) 
+                image = cv2.circle(image, (int(coords[1]), int(coords[0])), 3, tuple(color), -1)
+
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        # image = cv2.resize(image, (inputs["width"],inputs["height"]))
+        save_dir = os.path.join("./train_vis/", str(batched_inputs[0]['image_id']))
+        os.makedirs(save_dir, exist_ok=True)
+        cv2.imwrite(os.path.join(save_dir, f"iter_{num_iter}.jpg"), image)

@@ -75,6 +75,7 @@ def add_maskformer2_config(cfg):
     cfg.MODEL.SEM_SEG_HEAD.TRANSFORMER_ENC_LAYERS = 0
     # pixel decoder
     cfg.MODEL.SEM_SEG_HEAD.PIXEL_DECODER_NAME = "BasePixelDecoder"
+    cfg.MODEL.SEM_SEG_HEAD.REFINE_MASK_FEATURES = False
 
     # swin transformer backbone
     cfg.MODEL.SWIN = CN()
@@ -145,6 +146,7 @@ def add_maskformer2_config(cfg):
     cfg.ITERATIVE.TRAIN.CONCAT_COORD_IMAGE_FEATURES = False
     cfg.ITERATIVE.TRAIN.RANDOM_BG_QUERIES = False
     cfg.ITERATIVE.TRAIN.USE_POS_COORDS = False
+    cfg.ITERATIVE.TRAIN.USE_TIME_COORDS = False
     cfg.ITERATIVE.TRAIN.USE_POINTS = True
     cfg.ITERATIVE.TRAIN.USE_SCRIBBLES = False
     cfg.ITERATIVE.TRAIN.USE_CNN_BLOCK = False
@@ -152,6 +154,7 @@ def add_maskformer2_config(cfg):
     cfg.ITERATIVE.TRAIN.MIXED_TRAINING = False
     cfg.ITERATIVE.TRAIN.PROBABILITY_POINTS = 0.5
     cfg.ITERATIVE.TRAIN.USE_MULTICLASS_SOFTMAX = False
+    cfg.ITERATIVE.TRAIN.PER_OBJ_SAMPLING = False
 
     cfg.ITERATIVE.TEST.INTERACTIVE_EVALAUTION = False
     cfg.ITERATIVE.TEST.MAX_NUM_INTERACTIONS = 20

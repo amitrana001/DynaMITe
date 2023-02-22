@@ -170,6 +170,7 @@ class MSDeformAttnPixelDecoder(nn.Module):
         *,
         transformer_dropout: float,
         transformer_nheads: int,
+        refine_mask_features: bool,
         transformer_dim_feedforward: int,
         transformer_enc_layers: int,
         conv_dim: int,
@@ -202,6 +203,7 @@ class MSDeformAttnPixelDecoder(nn.Module):
         self.feature_strides = [v.stride for k, v in input_shape]
         self.feature_channels = [v.channels for k, v in input_shape]
         
+        self.refine_mask_features = refine_mask_features
         # this is the input shape of transformer encoder (could use less features than pixel decoder
         transformer_input_shape = sorted(transformer_input_shape.items(), key=lambda x: x[1].stride)
         self.transformer_in_features = [k for k, v in transformer_input_shape]  # starting from "res2" to "res5"
@@ -291,6 +293,13 @@ class MSDeformAttnPixelDecoder(nn.Module):
         self.lateral_convs = lateral_convs[::-1]
         self.output_convs = output_convs[::-1]
 
+        if self.refine_mask_features:
+            self.refine = nn.ModuleList()
+            for channel in range(len(self.feature_channels)):
+                self.refine.append(nn.Conv2d(
+                    conv_dim, conv_dim, 3, stride=1, padding=1
+                ))
+
     @classmethod
     def from_config(cls, cfg, input_shape: Dict[str, ShapeSpec]):
         ret = {}
@@ -302,6 +311,7 @@ class MSDeformAttnPixelDecoder(nn.Module):
         ret["norm"] = cfg.MODEL.SEM_SEG_HEAD.NORM
         ret["transformer_dropout"] = cfg.MODEL.MASK_FORMER.DROPOUT
         ret["transformer_nheads"] = cfg.MODEL.MASK_FORMER.NHEADS
+        ret["refine_mask_features"] = cfg.MODEL.SEM_SEG_HEAD.REFINE_MASK_FEATURES
         # ret["transformer_dim_feedforward"] = cfg.MODEL.MASK_FORMER.DIM_FEEDFORWARD
         ret["transformer_dim_feedforward"] = 1024  # use 1024 for deformable transformer encoder
         ret[
@@ -355,4 +365,30 @@ class MSDeformAttnPixelDecoder(nn.Module):
                 multi_scale_features.append(o)
                 num_cur_levels += 1
 
-        return self.mask_features(out[-1]), out[0], multi_scale_features
+        if self.refine_mask_features:
+            out[-1] = self.mask_features(out[-1])
+            refined_mask_features = self.fuse_features(out[::-1][:4])
+            return refined_mask_features, out[0], multi_scale_features
+        else:
+            return self.mask_features(out[-1]), out[0], multi_scale_features
+
+    def fuse_features(self, fpn_feats):
+            if self.refine is None:
+                return fpn_feats[0]
+
+            for i in range(len(fpn_feats)):
+                if i == 0:
+                    x = self.refine[i](fpn_feats[i])
+                else:
+                    x_l = self.refine[i](fpn_feats[i])
+
+                    target_h, target_w = x.shape[-2:]
+                    h, w = x_l.shape[-2:]
+                    assert target_h % h == 0
+                    assert target_w % w == 0
+                    factor_h, factor_w = target_h // h, target_w // w
+                    assert factor_h == factor_w
+                    x_l = F.interpolate(x_l, scale_factor=factor_h, mode='bilinear', align_corners=False)
+                    x = x + x_l
+            return x
+

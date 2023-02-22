@@ -26,7 +26,7 @@ color_map = colormap(rgb=True, maximum=1)
 
 def get_avg_noc(
     model, data_loader, cfg, iou_threshold = 0.85, dataset_name= None,
-    max_interactions = 20, is_post_process = False, sampling_strategy=2
+    max_interactions = 20, is_post_process = False
 ):
     """
     Run model on the data_loader and evaluate the metrics with evaluator.
@@ -53,7 +53,6 @@ def get_avg_noc(
     num_devices = get_world_size()
     logger = logging.getLogger(__name__)
     logger.info("Start inference on {} batches".format(len(data_loader)))
-    logger.info("Using sampling strategy {}".format(sampling_strategy))
 
     total = len(data_loader)  # inference data loader must have a fixed length
 
@@ -63,13 +62,14 @@ def get_avg_noc(
     total_compute_time = 0
     total_eval_time = 0
 
-    model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + f"_S{sampling_strategy}"
-    save_vis_path = os.path.join("./output/evaluation", dataset_name, f"{model_name}_S{sampling_strategy}_{start_time}/")
+    save_results_path = os.path.join("./output/", dataset_name, "swin_small/")
     
-    save_stats_path = os.path.join("./output/evaluation",  f'{dataset_name}.txt')
-    if not os.path.exists(save_stats_path):
-        header = ["model","NOC_80", "NOC_85", "NOC_90", "NFO_80","NFO_85","NFO_90","IOU_80","IOU_85", "IOU_90","#samples","#clicks"]
-        with open(save_stats_path, 'w') as f:
+    # total_iou = 0.0
+    save_evaluation_path = os.path.join("./output/",  f'{dataset_name}.txt')
+    if not os.path.exists(save_evaluation_path):
+        # print("No File")
+        header = ['Model Name', 'IOU_thres', 'Avg_NOC', 'NOF', "Avg_IOU", "max_num_iters", "num_inst"]
+        with open(save_evaluation_path, 'w') as f:
             writer = csv.writer(f, delimiter= "\t")
             writer.writerow(header)
 
@@ -92,7 +92,6 @@ def get_avg_noc(
         num_failed_objects=0
         total_iou = 0.0
         start_data_time = time.perf_counter()
-        dataset_iou_list = {}
         for idx, inputs in enumerate(data_loader):
             total_data_time += time.perf_counter() - start_data_time
             if idx == num_warmup:
@@ -103,21 +102,17 @@ def get_avg_noc(
 
             start_compute_time = time.perf_counter()
             
-            per_image_iou_list = []
+            # with open("output/pt_sampled_dict1.pickle", 'rb') as f:
+            #     pt_sampled_dict = pickle.load(f)
+
+            # pt_sampled_dict[inputs[0]['image_id']].append(inputs[0]['coords'])
+            # os.remove("output/pt_sampled_dict1.pickle")
+            # orig_device = inputs[0]['instances'].gt_masks.device
+            # per_image_feature_dicts = {}
             gt_masks = inputs[0]['instances'].gt_masks.to('cpu')
             bg_mask = inputs[0]["bg_mask"].to('cpu')
-            
             not_clicked_map = np.ones_like(gt_masks[0], dtype=np.bool)
-            if sampling_strategy == 0:
-                coords = inputs[0]["coords"]
-                not_clicked_map[coords[0], coords[1]] = False
-            elif sampling_strategy == 1:
-                point_mask = inputs[0]['fg_scrbs'][0][0].to('cpu')
-                not_clicked_map[torch.where(point_mask)] = False
-            # elif sampling_strategy == 2:
-            fg_click_map = np.asarray(inputs[0]['fg_scrbs'][0][0].to('cpu'),dtype=np.bool_)
-            bg_click_map = np.zeros_like(fg_click_map,dtype=np.bool_)
-
+            
             num_instances, h_t, w_t = gt_masks.shape[:]
             total_num_instances+=num_instances
             
@@ -125,47 +120,58 @@ def get_avg_noc(
             if 'ignore_mask' in inputs[0]:
                 ignore_masks = inputs[0]['ignore_mask'].to(device='cpu', dtype = torch.uint8)
                 ignore_masks =  torchvision.transforms.Resize(size = (h_t,w_t))(ignore_masks)
-
+                # ignore_masks = ignore_masks>128
             # we start with atleast one interaction per instance
             total_num_interactions+=(num_instances)
 
             num_interactions = 1
+            # stop_interaction = False
             ious = [0.0]*num_instances
             radius = 8
             
+            # for name, param in model.named_parameters():
+            #     if name == "sem_seg_head.predictor.bg_query.weight" or name== "sem_seg_head.predictor.query_embed.weight":
+            #         per_image_feature_dicts[name] = param.data
+
             (processed_results, outputs, images, scribbles,
             num_insts, features, mask_features,
             transformer_encoder_features, multi_scale_features,
             batched_num_scrbs_per_mask) = model(inputs)
             orig_device = images.tensor.device
 
-            # save_visualization(inputs[0], gt_masks, scribbles[0], save_vis_path,  ious[0], num_interactions-1,  alpha_blend=0.6)
+            # per_image_feature_dicts["features"] = features
+            # per_image_feature_dicts["mask_features"] = mask_features
+            # per_image_feature_dicts["multi_scale_features"] = multi_scale_features
+            # per_image_feature_dicts["transformer_encoder_features"] = transformer_encoder_features
+
+            
+            # save_visualization(inputs[0], gt_masks, scribbles[0], save_results_path,  ious[0], num_interactions-1,  alpha_blend=0.6)
             pred_masks = processed_results[0]['instances'].pred_masks.to('cpu',dtype=torch.uint8)
+            # per_image_feature_dicts['first_mask_before_resize'] = pred_masks[0]
             pred_masks = torchvision.transforms.Resize(size = (h_t,w_t))(pred_masks)
 
+            # if is_post_process:
+            #     pred_masks = post_process(pred_masks,inputs[0]['fg_scrbs'],ious,iou_threshold)
+            
+            # per_image_feature_dicts['first_mask'] = pred_masks[0]
             ious = compute_iou(gt_masks,pred_masks,ious,iou_threshold,ignore_masks)
-            # save_visualization(inputs[0], pred_masks, scribbles[0], save_vis_path,  ious[0], num_interactions,  alpha_blend=0.6)
-            per_image_iou_list.append(ious[0].item())
+            # save_visualization(inputs[0], pred_masks, scribbles[0], save_results_path,  ious[0], num_interactions,  alpha_blend=0.6)
+            # features_dicts[inputs[0]["image_id"]] = per_image_feature_dicts
             while (num_interactions<max_interactions):
                 
                 if all(iou >= iou_threshold for iou in ious):
                     break
-                # if num_interactions>3:
-                #     radius=5
+                # don't change the masks with iou 80%
                 for i,(gt_mask, pred_mask) in enumerate(zip(gt_masks, pred_masks)):
                     if ious[i] < iou_threshold:
-                        scrbs, is_fg, not_clicked_map, coords, fg_click_map, bg_click_map = get_next_click(pred_mask, gt_mask, not_clicked_map,
-                                                                    radius=radius, device=orig_device,
-                                                                    ignore_mask=ignore_masks[0] if ignore_masks!=None else None,
-                                                                    strategy=sampling_strategy, fg_click_map = fg_click_map,
-                                                                    bg_click_map = bg_click_map
-                                                                )
+                        scrbs, is_fg, not_clicked_map, coords= get_next_click(pred_mask, gt_mask, not_clicked_map,
+                                                                     radius=radius, device=orig_device,
+                                                                     ignore_mask=ignore_masks[0] if ignore_masks!=None else None)
 
                         # pt_sampled_dict[inputs[0]['image_id']].append(coords)
                         total_num_interactions+=1
                         scrbs = prepare_scribbles(scrbs,images)
                         if is_fg:
-
                             scribbles[0][i] = torch.cat([scribbles[0][i], scrbs], 0)
                             batched_num_scrbs_per_mask[0][i] += 1
                         else:
@@ -187,26 +193,19 @@ def get_avg_noc(
                     pred_masks = post_process(pred_masks,inputs[0]['fg_scrbs'],ious,iou_threshold)
                 
                 ious = compute_iou(gt_masks,pred_masks,ious,iou_threshold,ignore_masks)
-                per_image_iou_list.append(ious[0].item())
                 num_interactions+=1
-                # save_visualization(inputs[0], pred_masks, scribbles[0], save_vis_path,  ious[0], num_interactions,  alpha_blend=0.6)
-            
-            dataset_iou_list[inputs[0]['image_id']] = np.asarray(per_image_iou_list)
+                # save_visualization(inputs[0], pred_masks, scribbles[0], save_results_path,  ious[0], num_interactions,  alpha_blend=0.6)
+                
             
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
-
+            if num_interactions >= max_interactions:
+                # print(inputs[0]["image_id"])
+                for iou in ious:
+                    if iou<iou_threshold:
+                        num_failed_objects+=1
             for iou in ious:
                 total_iou += iou
-                if iou<iou_threshold:
-                    num_failed_objects+=1
-            # if num_interactions >= max_interactions:
-            #     # print(inputs[0]["image_id"])
-            #     for iou in ious:
-            #         if iou<iou_threshold:
-            #             num_failed_objects+=1
-            # for iou in ious:
-            #     total_iou += iou
 
             ###--------------
             # if torch.cuda.is_available():
@@ -275,22 +274,18 @@ def get_avg_noc(
             num_failed_objects, total_iou/total_num_instances
         ) 
     )
-  
-    NOC_80, NFO_80, IOU_80 = get_summary(dataset_iou_list, max_clicks=max_interactions, iou_thres=0.80)
-    NOC_85, NFO_85, IOU_85 = get_summary(dataset_iou_list, max_clicks=max_interactions, iou_thres=0.85)
-    NOC_90, NFO_90, IOU_90 = get_summary(dataset_iou_list, max_clicks=max_interactions, iou_thres=0.90)
+    # header = ['Model Name', 'IOU_thres', 'Avg_NOC', 'NOF', "Avg_IOU", "max_num_iters", "num_inst"]
+    model_name = cfg.MODEL.WEIGHTS.split("/")[-2]
+    if is_post_process:
+        model_name+="_p"
+    Avg_NOC = np.round(total_num_interactions/total_num_instances,2)
+    Avg_IOU = np.round(total_iou/total_num_instances, 2)
 
-    row = [model_name, NOC_80, NOC_85, NOC_90, NFO_80, NFO_85, NFO_90, IOU_80, IOU_85, IOU_90, total_num_instances, max_interactions]
-    with open(save_stats_path, 'a') as f:
+    row = [model_name, iou_threshold, Avg_NOC, num_failed_objects, Avg_IOU, max_interactions, total_num_instances]
+    with open(save_evaluation_path, 'a') as f:
         writer = csv.writer(f, delimiter= "\t")
         writer.writerow(row)
-
-    from prettytable import PrettyTable
-    table = PrettyTable()
-    table.field_names = ["dataset","NOC_80", "NOC_85", "NOC_90", "NFO_80","NFO_85","NFO_90","#samples", "#clicks"]
-    table.add_row([dataset_name, NOC_80, NOC_85, NOC_90, NFO_80, NFO_85, NFO_90, total_num_instances, max_interactions])
     
-    print(table)
     # with EventStorage() as s:
     # if comm.is_main_process():
     #     # storage = get_event_storage()
@@ -299,7 +294,11 @@ def get_avg_noc(
     #     storage.put_scalar(f"NOC_{iou_threshold*100}", total_num_interactions/total_num_instances)
     #     storage.put_scalar("Avg IOU", total_iou/total_num_instances)
     #     storage.put_scalar("Failed Cases", num_failed_objects)
-    return {}
+    # Replace it by an empty dict instead to make it easier for downstream code to handle
+    results = None
+    if results is None:
+        results = {}
+    return results
 
 
 @contextmanager
@@ -314,22 +313,3 @@ def inference_context(model):
     model.eval()
     yield
     model.train(training_mode)
-
-def get_summary(dataset_iou_list, max_clicks=20, iou_thres=0.85):
-
-    num_images =len(dataset_iou_list)
-    total_clicks = 0
-    failed_objects = 0
-    total_iou = 0
-    for (key,per_image_iou_list) in dataset_iou_list.items():
-        vals = per_image_iou_list>=iou_thres
-        if np.any(vals):
-            num_clicks =  np.argmax(vals) + 1
-            total_iou += per_image_iou_list[num_clicks-1]
-        else:
-            num_clicks =  max_clicks
-            total_iou += per_image_iou_list[-1]
-            failed_objects+=1
-        total_clicks+=num_clicks
-    
-    return np.round(total_clicks/num_images,2), failed_objects, np.round(total_iou/num_images,4)

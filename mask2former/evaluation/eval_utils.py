@@ -39,7 +39,7 @@ def compute_iou(gt_masks, pred_masks, ious, iou_threshold, ignore_masks=None):
     for i in range(len(ious)):
         # intersection = (gt_masks[i] * pred_masks[i]).sum()
         # union = torch.logical_or(gt_masks[i], pred_masks[i]).to(torch.int).sum()
-        n_iou = get_iou_per_mask(gt_masks[i], pred_masks[i],ignore_masks[i])
+        n_iou = get_iou_per_mask(gt_masks[i], pred_masks[i], ignore_masks[i])
         if ious[i] < iou_threshold:
             ious[i]= n_iou
         else:
@@ -93,7 +93,7 @@ def save_visualization(inputs, pred_masks, scribbles, dir_path, iou, num_iter,  
     image = cv2.resize(image, (inputs["width"],inputs["height"]))
     save_dir = os.path.join(dir_path, str(inputs['image_id']))
     os.makedirs(save_dir, exist_ok=True)
-    cv2.imwrite(os.path.join(save_dir, f"iter_{num_iter}_{iou}.jpg"), image)
+    cv2.imwrite(os.path.join(save_dir, f"iter_{num_iter}_{np.round(iou,4)}.jpg"), image)
 
 from mask2former.data.points.annotation_generator import point_candidates_dt_determinstic, create_circular_mask
 def get_next_click_bg(all_fp, not_clicked_map, radius=5, num_points=1,device='cpu'):
@@ -168,7 +168,11 @@ def get_next_click_fg(pred_mask, gt_mask, not_clicked_map, radius=5, device='cpu
     not_clicked_map[coords_y[0], coords_x[0]] = False
     return torch.from_numpy(pm).to(device, dtype = torch.uint8), not_clicked_map
 
-def get_next_click(pred_mask, gt_mask, not_clicked_map, radius=5, device='cpu', ignore_mask=None, padding=True):
+def get_next_click(
+    pred_mask, gt_mask, not_clicked_map, radius=8, device='cpu',
+    ignore_mask=None, padding=True, strategy = 1,
+    fg_click_map = None, bg_click_map = None
+):
 
     if ignore_mask is not None:
         not_ignore_mask = np.logical_not(np.asarray(ignore_mask, dtype=np.bool_))
@@ -182,10 +186,12 @@ def get_next_click(pred_mask, gt_mask, not_clicked_map, radius=5, device='cpu', 
         fn_mask =  np.logical_and(gt_mask, np.logical_not(pred_mask))
         fp_mask =  np.logical_and(np.logical_not(gt_mask), pred_mask)
     
+    if strategy == 2:
+        fn_mask = np.logical_and(fn_mask,~(fg_click_map))
+        fp_mask = np.logical_and(fp_mask, ~(bg_click_map))
     if fn_mask.sum()==0:
         fn_mask = gt_mask
-    # print("fn_mask:",fn_mask.sum())
-    # fp_mask = np.logical_and(np.logical_not(gt_mask), pred_mask)
+    
     H, W = gt_mask.shape
 
     if padding:
@@ -199,8 +205,9 @@ def get_next_click(pred_mask, gt_mask, not_clicked_map, radius=5, device='cpu', 
         fn_mask_dt = fn_mask_dt[1:-1, 1:-1]
         fp_mask_dt = fp_mask_dt[1:-1, 1:-1]
 
-    fn_mask_dt = fn_mask_dt * not_clicked_map
-    fp_mask_dt = fp_mask_dt * not_clicked_map
+    if strategy !=2:
+        fn_mask_dt = fn_mask_dt * not_clicked_map
+        fp_mask_dt = fp_mask_dt * not_clicked_map
 
     fn_max_dist = np.max(fn_mask_dt)
     fp_max_dist = np.max(fp_mask_dt)
@@ -215,8 +222,20 @@ def get_next_click(pred_mask, gt_mask, not_clicked_map, radius=5, device='cpu', 
     sample_locations = [[coords_y[0], coords_x[0]]]
 
     pm = create_circular_mask(H, W, centers=sample_locations, radius=radius)
-    not_clicked_map[coords_y[0], coords_x[0]] = False
-    return torch.from_numpy(pm).to(device, dtype = torch.float).unsqueeze(0), is_positive, not_clicked_map
+    
+    if strategy == 0:
+        not_clicked_map[coords_y[0], coords_x[0]] = False
+    elif strategy == 1:
+        not_clicked_map[np.where(pm==1)] = False
+    elif strategy == 2:
+        if is_positive:
+            fg_click_map = np.logical_or(fg_click_map,pm)
+        else:
+            bg_click_map = np.logical_or(bg_click_map,pm)
+
+    return (torch.from_numpy(pm).to(device, dtype = torch.float).unsqueeze(0),
+            is_positive, not_clicked_map, sample_locations[0],
+            fg_click_map, bg_click_map)
 
 def post_process(pred_masks,scribbles,ious=None, iou_threshold = 0.85):
     out = []
