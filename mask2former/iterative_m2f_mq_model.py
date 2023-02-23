@@ -230,7 +230,7 @@ class IterativeMask2FormerMQ(nn.Module):
             #              multi_scale_features, accumulate_loss, num_instances,scribbles)
             # mask classification target
             if "instances" in batched_inputs[0]:
-                gt_instances = [(x["instances"].to(self.device), x['padding_mask'].to(self.device)) for x in batched_inputs]
+                gt_instances = [(x["instances"].to(self.device), x['padding_mask'].to(self.device),x['bg_mask'].to(self.device)) for x in batched_inputs]
                 targets = self.prepare_targets(gt_instances, images)
             else:
                 targets = None
@@ -317,7 +317,7 @@ class IterativeMask2FormerMQ(nn.Module):
     def prepare_targets(self, targets, images):
         # h_pad, w_pad = images.tensor.shape[-2:]
         new_targets = []
-        for (targets_per_image, padding_mask) in targets:
+        for (targets_per_image, padding_mask, bg_mask) in targets:
             # pad gt
             # gt_masks = targets_per_image.gt_masks
             # padded_masks = torch.zeros((gt_masks.shape[0], h_pad, w_pad), dtype=gt_masks.dtype, device=gt_masks.device)
@@ -326,7 +326,8 @@ class IterativeMask2FormerMQ(nn.Module):
                 {
                     "labels": targets_per_image.gt_classes,
                     "masks": targets_per_image.gt_masks,
-                    "padding_mask": padding_mask
+                    "padding_mask": padding_mask,
+                    "bg_mask": bg_mask
                 }
             )
         return new_targets

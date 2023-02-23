@@ -15,7 +15,7 @@ from detectron2.structures import Boxes, ImageList, Instances, BitMasks
 from detectron2.utils.memory import retry_if_cuda_oom
 
 # from mask2former.evaluation import iterative_evaluator
-from .modeling.final_criterion import SetFinalCriterion
+from .modeling.final_criterion_v1 import SetFinalCriterion
 from .modeling.new_criterion import SetNewCriterion
 from .modeling.matcher import HungarianMatcher
 from mask2former.utils import get_new_scribbles, preprocess_batch_data
@@ -213,31 +213,27 @@ class SpatioTempMask2FormerMQ(nn.Module):
         
         if (images is None) or (batched_num_scrbs_per_mask is None) or (batched_fg_coords_list is None):
             if self.training:
-                images, batched_num_instances, batched_num_scrbs_per_mask, batched_fg_coords_list, batched_bg_coords_list = self.preprocess_batch_data(batched_inputs)
-            # else:
-            #     images, scribbles, num_instances, batched_num_scrbs_per_mask = self.preprocess_batch_data(batched_inputs)
+                (images, scribbles, batched_num_instances, batched_num_scrbs_per_mask,
+                 batched_fg_coords_list, batched_bg_coords_list) = self.preprocess_batch_data(batched_inputs)
         if features is None:
             features = self.backbone(images.tensor)
-        # mask_features, transformer_encoder_features, multi_scale_features, outputs = self.sem_seg_head(features, mask_features, transformer_encoder_features, multi_scale_features, scribbles=scribbles)
-        # print(batched_num_scrbs_per_mask[0])
+
         if self.training:
 
-            # outputs = self.iter_batch_data(batched_inputs, images, features, mask_features, transformer_encoder_features,
-            #              multi_scale_features, accumulate_loss, num_instances,scribbles)
-            # mask classification target
             if "instances" in batched_inputs[0]:
-                gt_instances = [(x["instances"].to(self.device), x['padding_mask'].to(self.device)) for x in batched_inputs]
+                gt_instances = [(x["instances"].to(self.device), x['padding_mask'].to(self.device),x['bg_mask'].to(self.device)) for x in batched_inputs]
                 targets = self.prepare_targets(gt_instances, images)
             else:
                 targets = None
             
             outputs, batched_num_scrbs_per_mask = self.sem_seg_head(batched_inputs, gt_instances, images, features, batched_num_instances,
-                                        mask=None, mask_features=mask_features,
-                                        transformer_encoder_features=transformer_encoder_features, 
-                                        multi_scale_features=multi_scale_features,
-                                        prev_mask_logits=prev_mask_logits, batched_num_scrbs_per_mask=batched_num_scrbs_per_mask,
-                                        batched_fg_coords_list =batched_fg_coords_list , batched_bg_coords_list = batched_bg_coords_list
-                                        )
+                                                                    None, scribbles, mask_features, 
+                                                                    transformer_encoder_features, 
+                                                                    multi_scale_features,
+                                                                    prev_mask_logits, batched_num_scrbs_per_mask,
+                                                                    batched_fg_coords_list,
+                                                                    batched_bg_coords_list
+                                                                )
             losses = self.criterion(outputs, targets, batched_num_scrbs_per_mask)
 
             for k in list(losses.keys()):
@@ -252,14 +248,16 @@ class SpatioTempMask2FormerMQ(nn.Module):
             # return losses
         else:
             gt_instances=None
-            outputs, mask_features, transformer_encoder_features, multi_scale_features, batched_num_scrbs_per_mask = self.sem_seg_head(batched_inputs, gt_instances, images, features, num_instances,
-                                        mask=None, scribbles=scribbles, mask_features=mask_features,
-                                        transformer_encoder_features=transformer_encoder_features, 
-                                        multi_scale_features=multi_scale_features,
-                                        prev_mask_logits=prev_mask_logits, batched_num_scrbs_per_mask=batched_num_scrbs_per_mask)
+            (outputs, mask_features, transformer_encoder_features,
+             multi_scale_features, batched_num_scrbs_per_mask) = self.sem_seg_head(batched_inputs, gt_instances, images, features, batched_num_instances,
+                                                                                    None, scribbles, mask_features, transformer_encoder_features, 
+                                                                                    multi_scale_features, prev_mask_logits, batched_num_scrbs_per_mask,
+                                                                                    batched_fg_coords_list, batched_bg_coords_list)
             processed_results = self.process_results(batched_inputs, images, outputs, num_instances, batched_num_scrbs_per_mask)
             if self.iterative_evaluation:
-                return processed_results, outputs, images, scribbles, num_instances, features, mask_features, transformer_encoder_features, multi_scale_features, batched_num_scrbs_per_mask
+                return (processed_results, outputs, images, scribbles, num_instances, features, mask_features,
+                        transformer_encoder_features, multi_scale_features, batched_num_scrbs_per_mask,
+                        batched_fg_coords_list, batched_bg_coords_list)
             else:
                 return processed_results
 
@@ -326,19 +324,40 @@ class SpatioTempMask2FormerMQ(nn.Module):
             batched_fg_coords_list = []
             batched_bg_coords_list = []
             batched_num_instances = []
+            scribbles = []
             for x in batched_inputs:
                 batched_num_scrbs_per_mask.append(x['num_scrbs_per_mask'])
                 batched_fg_coords_list.append(x['fg_click_coords'])
                 batched_bg_coords_list.append(x['bg_click_coords'])
                 # fg_scribbles_count.append(x["instances"].gt_masks.shape[0])
                 batched_num_instances.append(len(x['num_scrbs_per_mask']))
+                scribbles_per_image = []
+                for scrbs_per_mask in x['fg_scrbs']:
+                    if self.training:
+                        scribbles_per_image.append(scrbs_per_mask.to(device = images.device))
+                    else:
+                        scribbles_per_image.append(self.prepare_scribbles(scrbs_per_mask.to(device = images.device),images))
+                if x['bg_scrbs'] is not None:
+                    if self.training:
+                        scribbles_per_image.append(x['bg_scrbs'].to(device = images.device))
+                    else:
+                        scribbles_per_image.append(self.prepare_scribbles(x['bg_scrbs'].to(device = images.device),images))
+                else:
+                    scribbles_per_image.append(None)
+                scribbles.append(scribbles_per_image)
                
-            return images, batched_num_instances, batched_num_scrbs_per_mask, batched_fg_coords_list, batched_bg_coords_list
+            return images, scribbles, batched_num_instances, batched_num_scrbs_per_mask, batched_fg_coords_list, batched_bg_coords_list
     
+    def prepare_scribbles(self, scribbles,images):
+        h_pad, w_pad = images.tensor.shape[-2:]
+        padded_scribbles = torch.zeros((scribbles.shape[0],h_pad, w_pad), dtype=scribbles.dtype, device=scribbles.device)
+        padded_scribbles[:, : scribbles.shape[1], : scribbles.shape[2]] = scribbles
+        return padded_scribbles
+
     def prepare_targets(self, targets, images):
         # h_pad, w_pad = images.tensor.shape[-2:]
         new_targets = []
-        for (targets_per_image, padding_mask) in targets:
+        for (targets_per_image, padding_mask_per_image, bg_mask_per_image) in targets:
             # pad gt
             # gt_masks = targets_per_image.gt_masks
             # padded_masks = torch.zeros((gt_masks.shape[0], h_pad, w_pad), dtype=gt_masks.dtype, device=gt_masks.device)
@@ -347,7 +366,8 @@ class SpatioTempMask2FormerMQ(nn.Module):
                 {
                     "labels": targets_per_image.gt_classes,
                     "masks": targets_per_image.gt_masks,
-                    "padding_mask": padding_mask
+                    "padding_mask": padding_mask_per_image,
+                    "bg_mask": bg_mask_per_image
                 }
             )
         return new_targets

@@ -141,13 +141,13 @@ class COCOLVISMultiInstMQCoordsDatasetMapper:
                 annos = [
                     utils.transform_instance_annotations(obj, transforms, image_shape)
                     for obj in dataset_dict.pop("annotations")
-                    if obj.get("iscrowd", 0) == 0
+                    if (obj.get("iscrowd", 0) == 0 and obj.get("area",0) > 1000.0) 
                 ]
             else:
                 annos = [
                     utils.transform_instance_annotations(obj, transforms, image_shape)
                     for obj in dataset_dict.pop("annotations")
-                    if (obj.get("iscrowd", 0) == 0 and obj.get("isThing"))
+                    if (obj.get("iscrowd", 0) == 0 and obj.get("isThing") and obj.get("area",0) > 1000.0)
                 ]
             # NOTE: does not support BitMask due to augmentation
             # Current BitMask cannot handle empty objects
@@ -164,7 +164,7 @@ class COCOLVISMultiInstMQCoordsDatasetMapper:
             # Need to filter empty instances first (due to augmentation)
             instances = utils.filter_empty_instances(instances)
             # print(f"instances before filter:{instances.gt_masks.tensor.shape}")
-            instances = filter_coco_lvis_instances(instances, min_area = 1000.0)
+            # instances = filter_coco_lvis_instances(instances, min_area = 1000.0)
             # visualization(dataset_dict["image"], instances)
             # print(f"instances after filter:{instances.gt_masks.tensor.shape}")
             if len(instances) == 0:
@@ -181,7 +181,7 @@ class COCOLVISMultiInstMQCoordsDatasetMapper:
                 gt_masks = instances.gt_masks.tensor.to(dtype=torch.uint8)
                 gt_masks =  gt_masks[sorted(range(len(mask_areas)),key=mask_areas.__getitem__,reverse=True)]
 
-                instance_map = torch.zeros((gt_masks.shape[-2:]), dtype=torch.uint8)
+                instance_map = torch.zeros((gt_masks.shape[-2:]), dtype=torch.int16)
                 num_objects = gt_masks.shape[0]
                 instances_ids = np.arange(1, num_objects + 1)
 
@@ -192,8 +192,10 @@ class COCOLVISMultiInstMQCoordsDatasetMapper:
                 gt_masks = []
                 for _id in instances_ids:
                     _m = (instance_map == _id).to(dtype=torch.uint8)
-                    if _m.sum() > 100:
+                    if _m.sum() > 50:
                         gt_masks.append(_m)
+                if not len(gt_masks):
+                    return None
                 gt_masks = torch.stack(gt_masks,dim=0)
 
                 # gt_masks = instances.gt_masks.tensor.to(dtype=torch.uint8)
@@ -206,7 +208,7 @@ class COCOLVISMultiInstMQCoordsDatasetMapper:
                     num_masks = 1
                 else:
                     #Take 75% masks as the foreground masks
-                    num_masks = min(int(gt_masks.shape[0]*(0.60)), 30)
+                    num_masks = min(int(gt_masks.shape[0]*(0.70)), 30)
               
                 random_indices = random.sample(range(gt_masks.shape[0]),num_masks)
                 new_gt_masks = gt_masks[random_indices]
@@ -225,10 +227,10 @@ class COCOLVISMultiInstMQCoordsDatasetMapper:
                 
                 # new_gt_masks = new_gt_masks.unsqueeze(0)
                 # print(new_gt_masks.shape)
-                num_scrbs_per_mask, fg_coords_list, bg_coords_list = get_clicks_coords(new_gt_masks, all_masks=all_masks)
+                num_scrbs_per_mask, fg_coords_list, bg_coords_list, fg_point_masks, bg_point_masks = get_clicks_coords(new_gt_masks, all_masks=all_masks)
         
-                # dataset_dict["fg_scrbs"] = fg_point_masks
-                # dataset_dict["bg_scrbs"] = bg_point_masks
+                dataset_dict["fg_scrbs"] = fg_point_masks
+                dataset_dict["bg_scrbs"] = bg_point_masks
                 dataset_dict["bg_mask"] = torch.logical_not(all_masks).to(dtype = torch.uint8)
                 dataset_dict["fg_click_coords"] = fg_coords_list
                 dataset_dict["bg_click_coords"] = bg_coords_list
@@ -236,6 +238,7 @@ class COCOLVISMultiInstMQCoordsDatasetMapper:
                 # print(masks.tensor.dtype)
                 # visualization(dataset_dict["image"], new_instances, prev_output=None, batched_fg_coords_list=[fg_coords_list],batched_bg_coords_list=[bg_coords_list])
                 assert len(num_scrbs_per_mask) == new_instances.gt_masks.shape[0]
+                assert len(fg_point_masks) == len(num_scrbs_per_mask) 
             else:
                 return None
 

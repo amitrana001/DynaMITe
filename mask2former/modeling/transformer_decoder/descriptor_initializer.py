@@ -71,7 +71,7 @@ class AvgClicksPoolingInitializer(nn.Module):
         self.bg_thresh = 0.5
         self.multi_scale = multi_scale
 
-    def forward(self, features: Tensor, batched_fg_coords_list: list, batched_bg_coords_list: list,
+    def forward(self, features: Tensor, scribbles,  batched_fg_coords_list: list, batched_bg_coords_list: list,
                 height: int=None, width: int=None, random_bg_queries: bool=False) -> Tensor:
         """
         Forward method
@@ -81,28 +81,44 @@ class AvgClicksPoolingInitializer(nn.Module):
         """
         # bg_mask = self.unfold(bg_mask)  # [B, 1, grid_patch_size, Qb]
         # fmap_unfolded = self.unfold(fmap)  # [B, C, grid_patch_size, Qb]
-
         if random_bg_queries:
             if self.multi_scale:
                 descriptors = []
-                for b_num, fg_coords_per_image in enumerate(batched_fg_coords_list):
-                    feature_levels = len(features)
-                    query_descriptors = []
-                    point_masks = self._coords_to_point_masks(fg_coords_per_image,first_click_center=True, first_click_radius = 8,
-                               height = height, width = width, device= features[0][0].device)
-                    if  batched_bg_coords_list[b_num]:
-                        bg_point_masks = self._coords_to_point_masks([batched_bg_coords_list[b_num]],first_click_center=False, first_click_radius = 8,
-                               height = height, width = width, device= features[0][0].device)
-                        point_masks = torch.cat((point_masks,bg_point_masks),dim=0)
-                    point_masks = point_masks.unsqueeze(0)
-                    for i in range(feature_levels):
-                        fmap = features[i]
-                        feat_b_num = fmap[b_num].unsqueeze(0)
-                        # print(scrbs.shape)
-                        # print(feat_b_num.shape)
-                        point_masks_resized = F.interpolate(point_masks, size=feat_b_num.shape[-2:], mode="bilinear", align_corners=False)
-                        query_descriptors.append(self.get_descriptors(feat_b_num, point_masks_resized))
-                    descriptors.append(torch.mean(torch.stack(query_descriptors, -1), dim = -1))
+                
+        if random_bg_queries:
+            if self.multi_scale:
+                descriptors = []
+                if scribbles is None:
+                    for b_num, fg_coords_per_image in enumerate(batched_fg_coords_list):
+                        feature_levels = len(features)
+                        query_descriptors = []
+                        point_masks = self._coords_to_point_masks(fg_coords_per_image,first_click_center=True, first_click_radius = 8,
+                                height = height, width = width, device= features[0][0].device)
+                        if  batched_bg_coords_list[b_num]:
+                            bg_point_masks = self._coords_to_point_masks([batched_bg_coords_list[b_num]],first_click_center=False, first_click_radius = 8,
+                                height = height, width = width, device= features[0][0].device)
+                            point_masks = torch.cat((point_masks,bg_point_masks),dim=0)
+                        point_masks = point_masks.unsqueeze(0)
+                        for i in range(feature_levels):
+                            fmap = features[i]
+                            feat_b_num = fmap[b_num].unsqueeze(0)
+                            
+                            point_masks_resized = F.interpolate(point_masks, size=feat_b_num.shape[-2:], mode="bilinear", align_corners=False)
+                            query_descriptors.append(self.get_descriptors(feat_b_num, point_masks_resized))
+                        descriptors.append(torch.mean(torch.stack(query_descriptors, -1), dim = -1))
+                    return descriptors
+                else:
+                    for b_num, scrbs in enumerate(scribbles):
+                        feature_levels = len(features)
+                        query_descriptors = []
+                        scrbs = scrbs.unsqueeze(0)
+                        for i in range(feature_levels):
+                            fmap = features[i]
+                            feat_b_num = fmap[b_num].unsqueeze(0)
+                            
+                            scrbs_resized = F.interpolate(scrbs.to(torch.float), size=feat_b_num.shape[-2:], mode="bilinear", align_corners=False)
+                            query_descriptors.append(self.get_descriptors(feat_b_num,scrbs_resized))
+                        descriptors.append(torch.mean(torch.stack(query_descriptors, -1), dim = -1))
                 return descriptors
             # else:
             #     fmap = features[-1]

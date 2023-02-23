@@ -423,9 +423,10 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
 
     def _reset_parameters(self):
         nn.init.normal_(self.query_embed)
-        nn.init.normal_(self.static_bg_pe)
-        # # # nn.init.kaiming_uniform_(self.static_bg_query, a=1)
-        nn.init.xavier_uniform_(self.static_bg_query)
+        if self.use_static_bg_queries:
+            nn.init.normal_(self.static_bg_pe)
+            # # # nn.init.kaiming_uniform_(self.static_bg_query, a=1)
+            nn.init.xavier_uniform_(self.static_bg_query)
 
     @classmethod
     def from_config(cls, cfg, in_channels, mask_classification):
@@ -472,7 +473,7 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
 
         return ret
 
-    def forward(self, data, targets, images, num_instances, x, mask_features, mask = None,
+    def forward(self, data, targets, images, num_instances, x, mask_features, mask = None, scribbles =None,
                  prev_mask_logits=None, batched_num_scrbs_per_mask=None,
                  batched_fg_coords_list = None, batched_bg_coords_list = None):
         # x is a list of multi-scale feature
@@ -506,7 +507,7 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
                 #     alpha_blend=0.6, num_iter = 0)
                 
                 for i in range(num_iters):
-                    prev_output = self.iterative_batch_forward(x, src, pos, size_list, images, mask_features, prev_mask_logits,
+                    prev_output = self.iterative_batch_forward(x, src, pos, size_list, images, mask_features, scribbles, prev_mask_logits,
                                                                batched_num_scrbs_per_mask, batched_fg_coords_list, 
                                                                batched_bg_coords_list
                     )
@@ -517,8 +518,8 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
                         # scribbles, batched_num_scrbs_per_mask = get_new_points_mq_per_obj(data, processed_results, scribbles,
                         #                                                       random_bg_queries=self.random_bg_queries,
                         #                                                       batched_num_scrbs_per_mask = batched_num_scrbs_per_mask)
-                        batched_num_scrbs_per_mask, batched_fg_coords_list, batched_bg_coords_list = get_next_clicks_mq(data, processed_results,i+1, src[0].device,
-                                                                            batched_num_scrbs_per_mask,batched_fg_coords_list, batched_bg_coords_list,
+                        batched_num_scrbs_per_mask, scribbles, batched_fg_coords_list, batched_bg_coords_list = get_next_clicks_mq(data, processed_results,i+1, src[0].device,
+                                                                            scribbles, batched_num_scrbs_per_mask,batched_fg_coords_list, batched_bg_coords_list,
                                                                             per_obj_sampling=self.per_obj_sampling)
                         # if comm.is_main_process():
                         #     self.visualization(data, processed_results, batched_fg_coords_list[:], batched_bg_coords_list[:],
@@ -526,12 +527,12 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
                     else:
                         scribbles = get_new_scribbles_opt(data, processed_results, scribbles,random_bg_queries=self.random_bg_queries)
                     # print("after:",batched_num_scrbs_per_mask)
-            outputs = self.iterative_batch_forward(x, src, pos, size_list, images, mask_features, prev_mask_logits,
+            outputs = self.iterative_batch_forward(x, src, pos, size_list, images, mask_features, scribbles,  prev_mask_logits,
                                                     batched_num_scrbs_per_mask, batched_fg_coords_list, 
                                                     batched_bg_coords_list
                     )
         else:
-            outputs = self.iterative_batch_forward(x, src, pos, size_list, mask_features, scribbles,prev_mask_logits,
+            outputs = self.iterative_batch_forward(x, src, pos, size_list, mask_features, scribbles, prev_mask_logits,
                                                    batched_num_scrbs_per_mask, batched_fg_coords_list, batched_bg_coords_list)
         return outputs, batched_num_scrbs_per_mask
 
@@ -562,26 +563,26 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
 
         return outputs_class, outputs_mask, attn_mask
 
-    def iterative_batch_forward(self, x, src, pos, size_list, images, mask_features, prev_mask_logits=None,
-                                batched_num_scrbs_per_mask=None, batched_fg_coords_list=None,
-                                batched_bg_coords_list=None):
+    def iterative_batch_forward(self, x, src, pos, size_list, images, mask_features, scribbles =None,
+                                prev_mask_logits=None, batched_num_scrbs_per_mask=None,
+                                batched_fg_coords_list=None, batched_bg_coords_list=None):
 
         _, bs, _ = src[0].shape
         B, C, H, W = mask_features.shape
         height = 4*H
         width = 4*W
         if self.use_static_bg_queries:
-            # if batched_num_scrbs_per_mask is not None:
-            #     new_scribbles = []
-            #     for scrbs in scribbles:
-            #         if scrbs[-1] is not None:
-            #             new_scribbles.append(torch.cat(scrbs))
-            #         else:
-            #             new_scribbles.append(torch.cat(scrbs[:-1]))
+            if scribbles is not None:
+                new_scribbles = []
+                for scrbs in scribbles:
+                    if scrbs[-1] is not None:
+                        new_scribbles.append(torch.cat(scrbs))
+                    else:
+                        new_scribbles.append(torch.cat(scrbs[:-1]))
             # max_scrbs_batch = max([scrbs.shape[0] for scrbs in new_scribbles])
 
             # _,height,width = new_scribbles[0].shape
-            descriptors = self.query_descriptors_initializer(x, batched_fg_coords_list, batched_bg_coords_list, height=height, 
+            descriptors = self.query_descriptors_initializer(x, new_scribbles, batched_fg_coords_list, batched_bg_coords_list, height=height, 
                                                             width=width, random_bg_queries=self.random_bg_queries)
             max_queries_batch = max([desc.shape[1] for desc in descriptors])
             for i, desc in enumerate(descriptors):

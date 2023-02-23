@@ -136,28 +136,6 @@ class SetFinalCriterion(nn.Module):
         losses = {"loss_ce": loss_ce}
         return losses
     
-
-    def bg_mask_loss(self, outputs, targets):
-        indices = []
-        out = []
-        for i,t in enumerate(targets):
-            num_gt_classes = len(t['labels']) # 1 for bg_mask
-            indxs = torch.tensor(range(num_gt_classes+1))
-            indices.append((indxs, indxs)) 
-            # print(t["masks"].dtype)
-            target_bg_mask = 1 - torch.max(t["masks"],dim=0).values
-            # t['masks'] from #instxHxW -> (#inst+1)xHxW
-            targets[i]["masks"] = torch.cat((t["masks"], target_bg_mask.unsqueeze(0)), dim=0)
-
-            #output bg_mask
-            out_bg_mask = torch.max(outputs["pred_masks"][i][num_gt_classes:,], dim=0).values.unsqueeze(0)
-            # outputs["pred_masks"][i][num_gt_classes:,].max(dim=0)[0]
-            out.append(torch.cat([outputs["pred_masks"][i][:num_gt_classes], out_bg_mask, outputs["pred_masks"][i][num_gt_classes:]], 0))
-        outputs["pred_masks"] = torch.stack(out)
-
-        return outputs, targets, indices
-
-
     def loss_masks(self, outputs, targets, indices, num_masks, bg_loss = True, batched_num_scrbs_per_mask = None):
         """Compute the losses related to the masks: the focal loss and the dice loss.
         targets dicts must contain the key "masks" containing a tensor of dim [nb_target_boxes, h, w]
@@ -178,27 +156,10 @@ class SetFinalCriterion(nn.Module):
                 # outputs['pred_masks'][i] = torch.cat([torch.stack(temp_out),splited_masks[-1]])
                 # pred_masks_per_image['pred_masks'] = torch.stack(temp_out)
                 new_outputs.append(torch.stack(temp_out))
-        new_outputs = torch.stack(new_outputs)
-        # if bg_loss:
-        #     outputs, targets, indices = self.bg_mask_loss(outputs,targets)
-        #     num_masks += outputs["pred_masks"].shape[0] #batch_size == #bg_masks
-
-        src_idx = self._get_src_permutation_idx(indices)
-        tgt_idx = self._get_tgt_permutation_idx(indices)
-        
-        # src_masks = [o["pred_masks"] for o in new_outputs]
-        # # src_masks = outputs["pred_masks"]
-        # src_masks, valid = nested_tensor_from_tensor_list(src_masks).decompose()
-        # src_masks = src_masks.to(src_masks)
-        src_masks = new_outputs[src_idx]
+        src_masks = torch.cat(new_outputs,dim=0)
 
         masks = [t["masks"] for t in targets]
-        # TODO use valid to mask invalid areas due to padding in loss
-        target_masks, valid = nested_tensor_from_tensor_list(masks).decompose()
-        target_masks = target_masks.to(src_masks)
-        target_masks = target_masks[tgt_idx]
-
-        # target_bg_mask = torch.max(target_masks)
+        target_masks = torch.cat(masks,dim=0).to(dtype=torch.float32)
 
         # No need to upsample predictions as we are using normalized coordinates :)
         # N x 1 x H x W
@@ -275,11 +236,10 @@ class SetFinalCriterion(nn.Module):
             # target_bg_mask = torch.logical_not(torch.logical_or(t["padding_mask"], full_fg_mask)).to(dtype=torch.uint8)
             target_bg_mask = t['bg_mask']
             targets[i]["masks"] = torch.cat((t["masks"], target_bg_mask.unsqueeze(0)), dim=0)
-            indxs = torch.tensor(range(num_gt_classes))
-            indices.append((indxs, indxs)) 
+            # indxs = torch.tensor(range(num_gt_classes))
+            # indices.append((indxs, indxs)) 
 
-        # indices = self.matcher(outputs_without_aux, targets)
-
+        
         # Compute the average number of target boxes accross all nodes, for normalization purposes
         num_masks = sum(len(t["labels"])+1 for t in targets)
         num_masks = torch.as_tensor(
