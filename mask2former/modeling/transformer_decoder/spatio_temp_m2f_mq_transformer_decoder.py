@@ -258,6 +258,8 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
         num_static_bg_queries: int,
         use_point_clicks: bool,
         per_obj_sampling: bool,
+        use_coords_on_point_mask: bool,
+        use_point_features: bool,
         num_classes: int,
         hidden_dim: int,
         num_queries: int,
@@ -307,6 +309,8 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
         
         self.per_obj_sampling = per_obj_sampling
         self.use_time_coords = use_time_coords
+        self.use_coords_on_point_mask = use_coords_on_point_mask
+        self.use_point_features = use_point_features
 
         # Reverse Cross Attn
         self.use_rev_cross_attn = use_rev_cross_attn
@@ -366,7 +370,8 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
         self.decoder_norm = nn.LayerNorm(hidden_dim)
 
         self.multi_scale = True if query_initializer == "multi_scale" else False
-        self.query_descriptors_initializer = AvgClicksPoolingInitializer(multi_scale=self.multi_scale)
+        self.query_descriptors_initializer = AvgClicksPoolingInitializer(self.multi_scale, self.use_coords_on_point_mask,
+                                                                        self.use_point_features)
         
         if self.concat_coord_mask_features:
             self.coordinates_prev_mask = nn.Sequential(
@@ -459,6 +464,8 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
         ret["num_static_bg_queries"] = cfg.ITERATIVE.TRAIN.NUM_STATIC_BG_QUERIES
         ret["use_point_clicks"] = cfg.ITERATIVE.TRAIN.USE_POINTS
         ret["per_obj_sampling"] = cfg.ITERATIVE.TRAIN.PER_OBJ_SAMPLING
+        ret["use_coords_on_point_mask"] = cfg.ITERATIVE.TRAIN.USE_COORDS_ON_POINT_MASKS
+        ret["use_point_features"] = cfg.ITERATIVE.TRAIN.USE_POINT_FEATURES
         # NOTE: because we add learnable query features which requires supervision,
         # we add minus 1 to decoder layers to be consistent with our loss
         # implementation: that is, number of auxiliary losses is always

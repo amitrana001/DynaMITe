@@ -264,12 +264,15 @@ class SpatioTemporalV1M2FTransformerDecoder(nn.Module):
         random_bg_queries: bool,
         query_initializer: str,
         use_pos_coords: bool,
+        use_time_coords: bool,
         use_rev_cross_attn: bool,
         use_rev_attn_mask:bool,
         rev_cross_attn_num_layers: int,
         rev_cross_attn_scale: float,
         num_static_bg_queries: int,
         use_point_clicks: bool,
+        use_coords_on_point_mask: bool,
+        use_point_features: bool,
         use_cnn_block: bool,
         num_classes: int,
         hidden_dim: int,
@@ -405,6 +408,8 @@ class SpatioTemporalV1M2FTransformerDecoder(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),
         )
 
+        self.use_coords_on_point_mask = use_coords_on_point_mask
+        self.use_point_features = use_point_features
         self.use_pos_coords = use_pos_coords
         if self.use_pos_coords and (not self.random_bg_queries):
             self.ca_qpos_sine_proj = nn.Linear(hidden_dim, hidden_dim)
@@ -465,8 +470,11 @@ class SpatioTemporalV1M2FTransformerDecoder(nn.Module):
         ret["concat_coord_image_features"]=cfg.ITERATIVE.TRAIN.CONCAT_COORD_IMAGE_FEATURES
         ret["random_bg_queries"]=cfg.ITERATIVE.TRAIN.RANDOM_BG_QUERIES
         ret["use_pos_coords"] = cfg.ITERATIVE.TRAIN.USE_POS_COORDS
+        ret["use_time_coords"] = cfg.ITERATIVE.TRAIN.USE_TIME_COORDS
         ret["num_static_bg_queries"] = cfg.ITERATIVE.TRAIN.NUM_STATIC_BG_QUERIES
         ret["use_point_clicks"] = cfg.ITERATIVE.TRAIN.USE_POINTS
+        ret["use_coords_on_point_mask"] = cfg.ITERATIVE.TRAIN.USE_COORDS_ON_POINT_MASKS
+        ret["use_point_features"] = cfg.ITERATIVE.TRAIN.USE_POINT_FEATURES
         # NOTE: because we add learnable query features which requires supervision,
         # we add minus 1 to decoder layers to be consistent with our loss
         # implementation: that is, number of auxiliary losses is always

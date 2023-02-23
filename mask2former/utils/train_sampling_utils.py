@@ -8,7 +8,7 @@ import cv2
 import random
 from mask2former.data.points.annotation_generator import create_circular_mask
 
-def compute_iou(gt_masks, pred_masks, max_objs=5, iou_thres = 0.90):
+def compute_iou(gt_masks, pred_masks, max_objs=15, iou_thres = 0.90):
 
     intersections = np.sum(np.logical_and(gt_masks, pred_masks), (1,2))
     unions = np.sum(np.logical_or(gt_masks,pred_masks), (1,2))
@@ -17,7 +17,7 @@ def compute_iou(gt_masks, pred_masks, max_objs=5, iou_thres = 0.90):
     indices = torch.topk(torch.tensor(ious), len(ious),largest=False).indices
     return indices[bool_indices][:max_objs]
 
-def compute_fn_iou(gt_masks, pred_masks, bg_mask, max_objs=5, iou_thres = 0.90):
+def compute_fn_iou(gt_masks, pred_masks, bg_mask, max_objs=15, iou_thres = 0.90):
 
     ious = np.zeros(gt_masks.shape[0])
     for i, (gt_mask, pred_mask) in enumerate(zip(gt_masks,pred_masks)):
@@ -53,6 +53,7 @@ def _get_next_coords_bg(all_fp, timestamp,device, max_num_points=2, use_largest_
         indices = random.sample(range(sample_locations.shape[0]), num_points)
         points_coords = []
         point_masks = []
+        H,W = all_fp.shape
         for index in indices:
             coords = sample_locations[index]
             _pm = create_circular_mask(H, W, centers=[coords], radius=3)
@@ -83,6 +84,7 @@ def _get_next_coords_fg(pred_mask, gt_mask, timestamp, device,max_num_points=2):
         indices = random.sample(range(sample_locations.shape[0]), num_points)
         points_coords = []
         point_masks = []
+        H,W = pred_mask.shape
         for index in indices:
             coords = sample_locations[index]
             _pm = create_circular_mask(H, W, centers=[coords], radius=3)
