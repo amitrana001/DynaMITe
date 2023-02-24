@@ -599,6 +599,14 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
             output = torch.cat(descriptors, dim=0)
             
             query_embed = repeat(self.query_embed, "C -> Q N C", N=bs, Q=output.shape[1])
+            if self.use_pos_coords:
+                scrbs_coords = self.get_pos_tensor_coords(batched_fg_coords_list, batched_bg_coords_list,
+                                                        output.shape[1], height, width, output.device
+                                ) # bsxQx3
+                pos_coord_embed = self.gen_sineembed_for_position(scrbs_coords.permute(1,0,2), use_timestamp=self.use_time_coords) # Q x bs x C
+                pos_coord_embed = self.ca_qpos_sine_proj(pos_coord_embed.to(query_embed.dtype))
+                
+                query_embed = query_embed + pos_coord_embed
             static_bg_pe = repeat(self.static_bg_pe, "Bg C -> Bg N C", N=bs)
             query_embed = torch.cat((query_embed,static_bg_pe),dim=0)
             static_bg_queries = repeat(self.static_bg_query, "Bg C -> N Bg C", N=bs)
@@ -610,14 +618,14 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
         output = self.queries_nonlinear_projection(output).permute(1,0,2)
         # query positional embedding QxNxC
         # query_embed = repeat(self.query_embed, "C -> Q N C", N=bs, Q=num_scrbs)
-        if self.use_pos_coords:
-            scrbs_coords = self.get_pos_tensor_coords(batched_fg_coords_list, batched_bg_coords_list,
-                                                    num_scrbs, height, width, output.device
-                            ) # bsxQx3
-            pos_coord_embed = self.gen_sineembed_for_position(scrbs_coords.permute(1,0,2), use_timestamp=self.use_time_coords) # Q x bs x C
-            pos_coord_embed = self.ca_qpos_sine_proj(pos_coord_embed.to(query_embed.dtype))
+        # if self.use_pos_coords:
+        #     scrbs_coords = self.get_pos_tensor_coords(batched_fg_coords_list, batched_bg_coords_list,
+        #                                             num_scrbs, height, width, output.device
+        #                     ) # bsxQx3
+        #     pos_coord_embed = self.gen_sineembed_for_position(scrbs_coords.permute(1,0,2), use_timestamp=self.use_time_coords) # Q x bs x C
+        #     pos_coord_embed = self.ca_qpos_sine_proj(pos_coord_embed.to(query_embed.dtype))
             
-            query_embed = query_embed + pos_coord_embed
+        #     query_embed = query_embed + pos_coord_embed
 
         # query_embed = None
         predictions_class = []
@@ -712,14 +720,23 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
         dim_t = 10000 ** (2 * torch.div(dim_t, 2, rounding_mode='floor') / 128)
         x_embed = pos_tensor[:, :, 1] * scale
         y_embed = pos_tensor[:, :, 0] * scale
-        if use_timestamp:
-            t_embed = pos_tensor[:, :, 2] * scale
-            y_embed += t_embed
-            x_embed += x_embed
         pos_x = x_embed[:, :, None] / dim_t
         pos_y = y_embed[:, :, None] / dim_t
+        pos_x[:, :, 0::2][torch.where(pos_x[:, :, 0::2] < 0)] = 0.0
+        pos_x[:, :, 1::2][torch.where(pos_x[:, :, 1::2] < 0)] = math.pi/2
+        pos_y[:, :, 0::2][torch.where(pos_y[:, :, 0::2] < 0)] = 0.0
+        pos_y[:, :, 1::2][torch.where(pos_y[:, :, 1::2] < 0)] = math.pi/2
         pos_x = torch.stack((pos_x[:, :, 0::2].sin(), pos_x[:, :, 1::2].cos()), dim=3).flatten(2)
         pos_y = torch.stack((pos_y[:, :, 0::2].sin(), pos_y[:, :, 1::2].cos()), dim=3).flatten(2)
+
+        if use_timestamp:
+            t_embed = pos_tensor[:, :, 2] * scale
+            pos_t = t_embed[:, :, None] / dim_t
+            pos_t[:, :, 0::2][torch.where(pos_t[:, :, 0::2] < 0)] = 0.0
+            pos_t[:, :, 1::2][torch.where(pos_t[:, :, 1::2] < 0)] = math.pi/2
+            pos_t = torch.stack((pos_t[:, :, 0::2].sin(), pos_t[:, :, 1::2].cos()), dim=3).flatten(2)
+            pos_x+=pos_t
+            pos_y+=pos_t
         pos = torch.cat((pos_y, pos_x), dim=2)
         return pos
     
@@ -741,7 +758,7 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
             if batched_bg_coords_list[i] is not None:
                 for coords in batched_bg_coords_list[i]:
                     coords_per_image.append([coords[0]/width, coords[1]/height, coords[2]])
-            coords_per_image.extend([[0,0,0]] * (num_queries-len(coords_per_image)))
+            coords_per_image.extend([[-1.0,-1.0,-1.0]] * (num_queries-len(coords_per_image)))
             pos_tensor.append(torch.tensor(coords_per_image,device=device))
         # pos_tensor = torch.tensor(pos_tensor,device=device)
         pos_tensor = torch.stack(pos_tensor)
