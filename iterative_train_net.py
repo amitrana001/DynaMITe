@@ -54,7 +54,11 @@ from mask2former import (
     COCOLVISMultiInstMQClicksDatasetMapper,
     COCOLVISSingleInstMQClicksDatasetMapper,
     COCOMultiInstStuffMultiQueriesClicksDatasetMapper,
+<<<<<<< Updated upstream
     COCOSingleInstMultiQueriesStuffClicksDatasetMapper
+=======
+    COCOSingleInstMultiQueriesStuffClicksDatasetMapper,
+>>>>>>> Stashed changes
 )
 
 from mask2former import (
