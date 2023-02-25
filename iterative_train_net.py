@@ -4,6 +4,10 @@ MaskFormer Training Script.
 
 This script is a simplified version of the training script in detectron2/tools.
 """
+import csv
+
+import numpy as np
+
 try:
     # ignore ShapelyDeprecationWarning from fvcore
     from shapely.errors import ShapelyDeprecationWarning
@@ -25,14 +29,14 @@ import torch
 import detectron2.utils.comm as comm
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
-from detectron2.data import MetadataCatalog, build_detection_train_loader, build_detection_test_loader
+from detectron2.data import build_detection_train_loader, build_detection_test_loader
 from detectron2.engine import (
     DefaultTrainer,
     default_argument_parser,
     default_setup,
     launch,
 )
-from mask2former.evaluation.single_instance_evaluation import get_avg_noc
+from mask2former.evaluation.single_instance_evaluation import get_avg_noc, get_summary
 
 from detectron2.projects.deeplab import add_deeplab_config, build_lr_scheduler
 from detectron2.solver.build import maybe_add_gradient_clipping
@@ -40,25 +44,17 @@ from detectron2.utils.logger import setup_logger
 
 from detectron2.evaluation import (
     DatasetEvaluator,
-    print_csv_format,
-    verify_results,
 )
 
 # from mask2former.evaluation.iterative_evaluator import iterative_inference_on_dataset
 # MaskFormer
 from mask2former import (
-    COCOSingleInstClicksDatasetMapper,
-    COCOSingleInstStuffClicksDatasetMapper,
-    COCOAllInstClicksDatasetMapper,
-    COCOMultiInstClicksDatasetMapper,
-    COCOMultiInstStuffClicksDatasetMapper,
     COCOLVISMultiInstMQCoordsDatasetMapper,
     DAVIS17DetmClicksDatasetMapper,
     COCOLVISMultiInstMQClicksDatasetMapper,
     COCOLVISSingleInstMQClicksDatasetMapper,
     COCOMultiInstStuffMultiQueriesClicksDatasetMapper,
-    COCOSingleInstMultiQueriesStuffClicksDatasetMapper,
-    LVISMultiInstClicksDatasetMapper
+    COCOSingleInstMultiQueriesStuffClicksDatasetMapper
 )
 
 from mask2former import (
@@ -66,6 +62,123 @@ from mask2former import (
     SemanticSegmentorWithTTA,
     add_maskformer2_config,
 )
+
+
+def log_single_instance(res, max_interactions, dataset_name, model_name):
+    logger = logging.getLogger(__name__)
+    total_num_instances = sum(res['total_num_instances'])
+    total_num_interactions = sum(res['total_num_interactions'])
+    num_failed_objects = sum(res['num_failed_objects'])
+    total_iou = sum(res['total_iou'])
+
+    logger.info(
+        "Total number of instances: {}, Average num of interactions:{}".format(
+            total_num_instances, total_num_interactions / total_num_instances
+        )
+    )
+    logger.info(
+        "Total number of failed cases: {}, Avg IOU: {}".format(
+            num_failed_objects, total_iou / total_num_instances
+        )
+    )
+
+    # 'res['dataset_iou_list'] is a list of dicts which has to be merged into a single dict
+    dataset_iou_list = {}
+    for _d in res['dataset_iou_list']:
+        dataset_iou_list.update(_d)
+
+    NOC_80, NFO_80, IOU_80 = get_summary(dataset_iou_list, max_clicks=max_interactions, iou_thres=0.80)
+    NOC_85, NFO_85, IOU_85 = get_summary(dataset_iou_list, max_clicks=max_interactions, iou_thres=0.85)
+    NOC_90, NFO_90, IOU_90 = get_summary(dataset_iou_list, max_clicks=max_interactions, iou_thres=0.90)
+
+    row = [model_name,
+           NOC_80, NOC_85, NOC_90, NFO_80, NFO_85, NFO_90, IOU_80, IOU_85, IOU_90,
+           total_num_instances,
+           max_interactions]
+
+    save_stats_path = os.path.join("./output/evaluation", f'{dataset_name}.txt')
+    os.makedirs("./output/evaluation", exist_ok=True)
+    if not os.path.exists(save_stats_path):
+        header = ["model",
+                  "NOC_80", "NOC_85", "NOC_90", "NFO_80","NFO_85","NFO_90","IOU_80","IOU_85", "IOU_90",
+                  "#samples","#clicks"]
+        with open(save_stats_path, 'w') as f:
+            writer = csv.writer(f, delimiter= "\t")
+            writer.writerow(header)
+    else:
+        with open(save_stats_path, 'a') as f:
+            writer = csv.writer(f, delimiter="\t")
+            writer.writerow(row)
+
+    from prettytable import PrettyTable
+    table = PrettyTable()
+    table.field_names = ["dataset", "NOC_80", "NOC_85", "NOC_90", "NFO_80", "NFO_85", "NFO_90", "#samples",
+                         "#clicks"]
+    table.add_row(
+        [dataset_name, NOC_80, NOC_85, NOC_90, NFO_80, NFO_85, NFO_90, total_num_instances, max_interactions])
+
+    print(table)
+
+
+def log_multi_instance(res, max_interactions, dataset_name, model_name, iou_threshold=0.85, save_stats_summary=True):
+    logger = logging.getLogger(__name__)
+    total_num_instances = sum(res['total_num_instances'])
+    total_num_interactions = sum(res['total_num_interactions'])
+    num_failed_objects = sum(res['num_failed_objects'])
+    total_iou = sum(res['total_iou'])
+
+    logger.info(
+        "Total number of instances: {}, Average num of interactions:{}".format(
+            total_num_instances, total_num_interactions / total_num_instances
+        )
+    )
+    logger.info(
+        "Total number of failed cases: {}, Avg IOU: {}".format(
+            num_failed_objects, total_iou / total_num_instances
+        )
+    )
+
+    # header = ['Model Name', 'IOU_thres', 'Avg_NOC', 'NOF', "Avg_IOU", "max_num_iters", "num_inst"]
+    NOC = np.round(total_num_interactions / total_num_instances, 2)
+    NCI = sum(res['avg_num_clicks_per_images']) / len(res['avg_num_clicks_per_images'])
+    NFI = len(res['failed_images_ids'])
+    Avg_IOU = np.round(total_iou / total_num_instances, 4)
+    row = [model_name, NCI, NFI, NOC, num_failed_objects, Avg_IOU, iou_threshold, max_interactions, total_num_instances]
+
+    save_stats_path = os.path.join("./output/evaluation", f'{dataset_name}.txt')
+    os.makedirs("./output/evaluation", exist_ok=True)
+    with open(save_stats_path, 'a') as f:
+        writer = csv.writer(f, delimiter="\t")
+        writer.writerow(row)
+
+    if save_stats_summary:
+        summary_stats = {}
+        summary_stats["dataset"] = dataset_name
+        summary_stats["model"] = model_name
+        summary_stats["iou_threshold"] = iou_threshold
+        summary_stats["failed_images_counts"] = NFI
+        summary_stats["avg_over_total_images"] = NCI
+        summary_stats["Avg_NOC"] = NOC
+        summary_stats["Avg_IOU"] = np.round(total_iou / total_num_instances, 4)
+        summary_stats["num_failed_objects"] = num_failed_objects
+        summary_stats["failed_images_ids"] = res['failed_images_ids']
+        summary_stats["failed_objects_areas"] = res['failed_objects_areas']
+        summary_stats["avg_num_clicks_per_images"] = np.mean(res['avg_num_clicks_per_images'])
+        summary_stats["total_computer_time"] = res['total_compute_time_str']
+        summary_stats["time_per_intreaction_tranformer_decoder"] = np.mean(
+            res['time_per_intreaction_tranformer_decoder']
+        )
+        summary_stats["time_per_image_features"] = np.mean(res['time_per_image_features'])
+        summary_stats["time_per_image_annotation"] = np.mean(res['time_per_image_annotation'])
+
+        save_summary_path = os.path.join(f"./output/evaluations/{dataset_name}")
+        os.makedirs(save_summary_path, exist_ok=True)
+        stats_file = os.path.join(save_summary_path,
+                                  f"{model_name}_{max_interactions}_max_click_th_final_updated_time_summary.pickle")
+
+        import pickle
+        with open(stats_file, 'wb') as handle:
+            pickle.dump(summary_stats, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 class Trainer(DefaultTrainer):
@@ -208,7 +321,6 @@ class Trainer(DefaultTrainer):
             optimizer = maybe_add_gradient_clipping(cfg, optimizer)
         return optimizer
 
-
     @classmethod
     def test(cls, cfg, model, evaluators=None):
         """
@@ -235,30 +347,53 @@ class Trainer(DefaultTrainer):
 
         results = OrderedDict()
         for idx, dataset_name in enumerate(cfg.DATASETS.TEST):
+            max_interactions = 10
+            iou_threshold = 0.85
             data_loader = cls.build_test_loader(cfg, dataset_name)
             
             evaluator =None
             if dataset_name in ["coco_2017_val", "davis_2017_val", "sbd_multi_insts"]:
+                model_name = cfg.MODEL.WEIGHTS.split("/")[-2]
                 from mask2former.evaluation.multi_instance_evaluation import evaluate
                 results_i = evaluate(model, data_loader,cfg, dataset_name)
+                results_i = comm.gather(results_i, dst=0)  # [res1:dict, res2:dict,...]
+                if comm.is_main_process():
+                    # sum the values with same keys
+                    assert len(results_i) > 0
+                    res_gathered = results_i[0]
+                    results_i.pop(0)
+                    for _d in results_i:
+                        for k in _d.keys():
+                            res_gathered[k] += _d[k]
+                    log_multi_instance(res_gathered, max_interactions=max_interactions,
+                                        dataset_name=dataset_name, model_name=model_name)
             else:
+                max_interactions = 20
                 iou_threshold = [0.90]
                 for iou in iou_threshold:
                     for s in range(3):
-                        results_i = get_avg_noc(model, data_loader, cfg, iou_threshold = iou, dataset_name=dataset_name,sampling_strategy=s)
-            results[dataset_name] = results_i
-            if comm.is_main_process():
-                assert isinstance(
-                    results_i, dict
-                ), "Evaluator must return a dict on the main process. Got {} instead.".format(
-                    results_i
-                )
-                logger.info("Evaluation results for {} in csv format:".format(dataset_name))
-                print_csv_format(results_i)
+                        model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + f"_S{s}"
+                        results_i = get_avg_noc(model, data_loader, cfg, iou_threshold = iou,
+                                                dataset_name=dataset_name,sampling_strategy=s,
+                                                max_interactions=max_interactions)
+                        results_i = comm.gather(results_i, dst=0)  # [res1:dict, res2:dict,...]
+                        if comm.is_main_process():
+                            # sum the values with same keys
+                            assert len(results_i)>0
+                            res_gathered = results_i[0]
+                            results_i.pop(0)
+                            for _d in results_i:
+                                for k in _d.keys():
+                                    res_gathered[k] += _d[k]
+                            # res_gathered = dict(
+                            #     functools.reduce(operator.iconcat,
+                            #                      map(collections.Counter, results_i))
+                            # )
+                            # print_csv_format(res_gathered)
+                            log_single_instance(res_gathered, max_interactions=max_interactions,
+                                                dataset_name=dataset_name, model_name=model_name)
 
-        if len(results) == 1:
-            results = list(results.values())[0]
-        return results
+        return {}
 
     @classmethod
     def test_with_TTA(cls, cfg, model):
@@ -295,6 +430,7 @@ def setup(args):
     # Setup logger for "mask_former" module
     setup_logger(output=cfg.OUTPUT_DIR, distributed_rank=comm.get_rank(), name="mask2former")
     return cfg
+
 
 def main(args):
     cfg = setup(args)

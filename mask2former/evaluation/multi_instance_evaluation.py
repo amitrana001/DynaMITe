@@ -1,26 +1,21 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
-from audioop import mul
+import csv
 import datetime
 import logging
-import time
 import os
-from collections import OrderedDict, abc
+import time
 from contextlib import ExitStack, contextmanager
-from traceback import walk_tb
-from typing import List, Union
+
+import numpy as np
 import torch
 import torchvision
-from torch import nn
-import cv2
-import detectron2.utils.comm as comm
-from detectron2.utils.events import EventStorage, get_event_storage
-from detectron2.structures import BitMasks
-import csv
-import numpy as np
-from detectron2.utils.comm import get_world_size, is_main_process
-from detectron2.utils.logger import log_every_n_seconds
 from detectron2.utils.colormap import colormap
-from mask2former.evaluation.eval_utils import prepare_scribbles, get_fn_area, get_next_click_bg, get_next_click_fg, save_visualization
+from detectron2.utils.comm import get_world_size
+from detectron2.utils.logger import log_every_n_seconds
+from torch import nn
+
+from mask2former.evaluation.eval_utils import prepare_scribbles, get_fn_area, get_next_click_bg, get_next_click_fg
+
 color_map = colormap(rgb=True, maximum=1)
 
 
@@ -96,7 +91,6 @@ def evaluate(
 
         start_data_time = time.perf_counter()
         for idx, inputs in enumerate(data_loader):
-            
             if 'bg_mask' not in inputs[0]:
                 continue
             total_data_time += time.perf_counter() - start_data_time
@@ -277,56 +271,69 @@ def evaluate(
         )
     )
 
-    logger.info(
-        "Total number of instances: {}, Average num of interactions:{}".format(
-            total_num_instances, total_num_interactions/total_num_instances
-        )
-    )
-    logger.info(
-        "Total number of failed cases: {}, Avg IOU: {}".format(
-            num_failed_objects, total_iou/total_num_instances
-        ) 
-    )
-
-    # header = ['Model Name', 'IOU_thres', 'Avg_NOC', 'NOF', "Avg_IOU", "max_num_iters", "num_inst"]
-    model_name = cfg.MODEL.WEIGHTS.split("/")[-2]
-    NOC = np.round(total_num_interactions/total_num_instances,2)
-    NCI = sum(avg_num_clicks_per_images)/len(avg_num_clicks_per_images)
-    NFI = len(failed_images_ids)
-    Avg_IOU = np.round(total_iou/total_num_instances, 4)
-    ['Model Name', 'NCI', 'NFI','NOC', 'NFO', "Avg_IOU", 'IOU_thres',"max_num_iters", "num_inst"]
-    row = [model_name, NCI, NFI, NOC, num_failed_objects, Avg_IOU, iou_threshold, max_interactions, total_num_instances]
-    with open(save_stats_path, 'a') as f:
-        writer = csv.writer(f, delimiter= "\t")
-        writer.writerow(row)
-   
-    if save_stats_summary:
-        summary_stats = {}
-        summary_stats["dataset"] = dataset_name
-        summary_stats["model"] = model_name
-        summary_stats["iou_threshold"] = iou_threshold
-        summary_stats["failed_images_counts"] = NFI
-        summary_stats["avg_over_total_images"] = NCI
-        summary_stats["Avg_NOC"] = NOC
-        summary_stats["Avg_IOU"] = np.round(total_iou/total_num_instances, 4)
-        summary_stats["num_failed_objects"] = num_failed_objects
-        summary_stats["failed_images_ids"] = failed_images_ids
-        summary_stats["failed_objects_areas"] = failed_objects_areas
-        summary_stats["avg_num_clicks_per_images"] = avg_num_clicks_per_images
-        summary_stats["total_computer_time"] = total_compute_time_str
-        summary_stats["time_per_intreaction_tranformer_decoder"] = time_per_intreaction_tranformer_decoder
-        summary_stats["time_per_image_features"] = time_per_image_features
-        summary_stats["time_per_image_annotation"] = time_per_image_annotation
-        
-        save_summary_path = os.path.join("./all_data/evaluations/", cfg.DATASETS.TEST[0])
-        stats_file = os.path.join(save_summary_path, f"{model_name}_{max_interactions}_max_click_th_final_updated_time_summary.pickle")
-
-        import pickle
-        with open(stats_file, 'wb') as handle:
-            pickle.dump(summary_stats, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    results = None
-    if results is None:
-        results = {}
+    # logger.info(
+    #     "Total number of instances: {}, Average num of interactions:{}".format(
+    #         total_num_instances, total_num_interactions/total_num_instances
+    #     )
+    # )
+    # logger.info(
+    #     "Total number of failed cases: {}, Avg IOU: {}".format(
+    #         num_failed_objects, total_iou/total_num_instances
+    #     )
+    # )
+    #
+    # # header = ['Model Name', 'IOU_thres', 'Avg_NOC', 'NOF', "Avg_IOU", "max_num_iters", "num_inst"]
+    # model_name = cfg.MODEL.WEIGHTS.split("/")[-2]
+    # NOC = np.round(total_num_interactions/total_num_instances,2)
+    # NCI = sum(avg_num_clicks_per_images)/len(avg_num_clicks_per_images)
+    # NFI = len(failed_images_ids)
+    # Avg_IOU = np.round(total_iou/total_num_instances, 4)
+    # ['Model Name', 'NCI', 'NFI','NOC', 'NFO', "Avg_IOU", 'IOU_thres',"max_num_iters", "num_inst"]
+    # row = [model_name, NCI, NFI, NOC, num_failed_objects, Avg_IOU, iou_threshold, max_interactions, total_num_instances]
+    # with open(save_stats_path, 'a') as f:
+    #     writer = csv.writer(f, delimiter= "\t")
+    #     writer.writerow(row)
+    #
+    # if save_stats_summary:
+    #     summary_stats = {}
+    #     summary_stats["dataset"] = dataset_name
+    #     summary_stats["model"] = model_name
+    #     summary_stats["iou_threshold"] = iou_threshold
+    #     summary_stats["failed_images_counts"] = NFI
+    #     summary_stats["avg_over_total_images"] = NCI
+    #     summary_stats["Avg_NOC"] = NOC
+    #     summary_stats["Avg_IOU"] = np.round(total_iou/total_num_instances, 4)
+    #     summary_stats["num_failed_objects"] = num_failed_objects
+    #     summary_stats["failed_images_ids"] = failed_images_ids
+    #     summary_stats["failed_objects_areas"] = failed_objects_areas
+    #     summary_stats["avg_num_clicks_per_images"] = avg_num_clicks_per_images
+    #     summary_stats["total_computer_time"] = total_compute_time_str
+    #     summary_stats["time_per_intreaction_tranformer_decoder"] = time_per_intreaction_tranformer_decoder
+    #     summary_stats["time_per_image_features"] = time_per_image_features
+    #     summary_stats["time_per_image_annotation"] = time_per_image_annotation
+    #
+    #     save_summary_path = os.path.join("./all_data/evaluations/", cfg.DATASETS.TEST[0])
+    #     stats_file = os.path.join(save_summary_path, f"{model_name}_{max_interactions}_max_click_th_final_updated_time_summary.pickle")
+    #
+    #     import pickle
+    #     with open(stats_file, 'wb') as handle:
+    #         pickle.dump(summary_stats, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    # results = None
+    # if results is None:
+    #     results = {}
+    results = {'total_num_instances': [total_num_instances],
+               'total_num_interactions': [total_num_interactions],
+               'num_failed_objects': [num_failed_objects],
+               'total_iou': [total_iou],
+               'failed_images_ids': failed_images_ids,
+               'failed_objects_areas': failed_objects_areas,
+               'avg_num_clicks_per_images': avg_num_clicks_per_images,
+               'total_compute_time_str': total_compute_time_str,
+               'iou_threshold': iou_threshold,
+               'time_per_intreaction_tranformer_decoder': time_per_intreaction_tranformer_decoder,
+               'time_per_image_features': time_per_image_features,
+               'time_per_image_annotation': time_per_image_annotation,
+               }
     return results
 
 

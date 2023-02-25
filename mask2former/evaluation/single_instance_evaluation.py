@@ -1,27 +1,20 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
-from audioop import mul
 import datetime
 import logging
 import time
-import os
-from collections import OrderedDict, abc
 from contextlib import ExitStack, contextmanager
-from traceback import walk_tb
-from typing import List, Union
+
+import numpy as np
 import torch
 import torchvision
-from torch import nn
-import cv2
-import detectron2.utils.comm as comm
-from detectron2.utils.events import EventStorage, get_event_storage
-from detectron2.structures import BitMasks
-import csv
-import numpy as np
-from detectron2.utils.comm import get_world_size, is_main_process
-from detectron2.utils.logger import log_every_n_seconds
-from mask2former.data.points.annotation_generator import get_next_click
-from mask2former.evaluation.eval_utils import post_process, compute_iou, get_next_click, save_visualization, prepare_scribbles
 from detectron2.utils.colormap import colormap
+from detectron2.utils.comm import get_world_size
+from detectron2.utils.logger import log_every_n_seconds
+from torch import nn
+
+from mask2former.data.points.annotation_generator import get_next_click
+from mask2former.evaluation.eval_utils import post_process, compute_iou, get_next_click, prepare_scribbles
+
 color_map = colormap(rgb=True, maximum=1)
 
 def get_avg_noc(
@@ -63,15 +56,15 @@ def get_avg_noc(
     total_compute_time = 0
     total_eval_time = 0
 
-    model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + f"_S{sampling_strategy}"
-    save_vis_path = os.path.join("./output/evaluation", dataset_name, f"{model_name}_S{sampling_strategy}_{start_time}/")
+    # model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + f"_S{sampling_strategy}"
+    # save_vis_path = os.path.join("./output/evaluation", dataset_name, f"{model_name}_S{sampling_strategy}_{start_time}/")
     
-    save_stats_path = os.path.join("./output/evaluation",  f'{dataset_name}.txt')
-    if not os.path.exists(save_stats_path):
-        header = ["model","NOC_80", "NOC_85", "NOC_90", "NFO_80","NFO_85","NFO_90","IOU_80","IOU_85", "IOU_90","#samples","#clicks"]
-        with open(save_stats_path, 'w') as f:
-            writer = csv.writer(f, delimiter= "\t")
-            writer.writerow(header)
+    # save_stats_path = os.path.join("./output/evaluation",  f'{dataset_name}.txt')
+    # if not os.path.exists(save_stats_path):
+    #     header = ["model","NOC_80", "NOC_85", "NOC_90", "NFO_80","NFO_85","NFO_90","IOU_80","IOU_85", "IOU_90","#samples","#clicks"]
+    #     with open(save_stats_path, 'w') as f:
+    #         writer = csv.writer(f, delimiter= "\t")
+    #         writer.writerow(header)
 
     # import pickle
     # from collections import defaultdict
@@ -265,32 +258,32 @@ def get_avg_noc(
         )
     )
 
-    logger.info(
-        "Total number of instances: {}, Average num of interactions:{}".format(
-            total_num_instances, total_num_interactions/total_num_instances
-        )
-    )
-    logger.info(
-        "Total number of failed cases: {}, Avg IOU: {}".format(
-            num_failed_objects, total_iou/total_num_instances
-        ) 
-    )
-  
-    NOC_80, NFO_80, IOU_80 = get_summary(dataset_iou_list, max_clicks=max_interactions, iou_thres=0.80)
-    NOC_85, NFO_85, IOU_85 = get_summary(dataset_iou_list, max_clicks=max_interactions, iou_thres=0.85)
-    NOC_90, NFO_90, IOU_90 = get_summary(dataset_iou_list, max_clicks=max_interactions, iou_thres=0.90)
-
-    row = [model_name, NOC_80, NOC_85, NOC_90, NFO_80, NFO_85, NFO_90, IOU_80, IOU_85, IOU_90, total_num_instances, max_interactions]
-    with open(save_stats_path, 'a') as f:
-        writer = csv.writer(f, delimiter= "\t")
-        writer.writerow(row)
-
-    from prettytable import PrettyTable
-    table = PrettyTable()
-    table.field_names = ["dataset","NOC_80", "NOC_85", "NOC_90", "NFO_80","NFO_85","NFO_90","#samples", "#clicks"]
-    table.add_row([dataset_name, NOC_80, NOC_85, NOC_90, NFO_80, NFO_85, NFO_90, total_num_instances, max_interactions])
-    
-    print(table)
+    # logger.info(
+    #     "Total number of instances: {}, Average num of interactions:{}".format(
+    #         total_num_instances, total_num_interactions/total_num_instances
+    #     )
+    # )
+    # logger.info(
+    #     "Total number of failed cases: {}, Avg IOU: {}".format(
+    #         num_failed_objects, total_iou/total_num_instances
+    #     )
+    # )
+    #
+    # NOC_80, NFO_80, IOU_80 = get_summary(dataset_iou_list, max_clicks=max_interactions, iou_thres=0.80)
+    # NOC_85, NFO_85, IOU_85 = get_summary(dataset_iou_list, max_clicks=max_interactions, iou_thres=0.85)
+    # NOC_90, NFO_90, IOU_90 = get_summary(dataset_iou_list, max_clicks=max_interactions, iou_thres=0.90)
+    #
+    # row = [model_name, NOC_80, NOC_85, NOC_90, NFO_80, NFO_85, NFO_90, IOU_80, IOU_85, IOU_90, total_num_instances, max_interactions]
+    # with open(save_stats_path, 'a') as f:
+    #     writer = csv.writer(f, delimiter= "\t")
+    #     writer.writerow(row)
+    #
+    # from prettytable import PrettyTable
+    # table = PrettyTable()
+    # table.field_names = ["dataset","NOC_80", "NOC_85", "NOC_90", "NFO_80","NFO_85","NFO_90","#samples", "#clicks"]
+    # table.add_row([dataset_name, NOC_80, NOC_85, NOC_90, NFO_80, NFO_85, NFO_90, total_num_instances, max_interactions])
+    #
+    # print(table)
     # with EventStorage() as s:
     # if comm.is_main_process():
     #     # storage = get_event_storage()
@@ -299,7 +292,12 @@ def get_avg_noc(
     #     storage.put_scalar(f"NOC_{iou_threshold*100}", total_num_interactions/total_num_instances)
     #     storage.put_scalar("Avg IOU", total_iou/total_num_instances)
     #     storage.put_scalar("Failed Cases", num_failed_objects)
-    return {}
+    return {'total_num_instances': [total_num_instances],
+            'total_num_interactions': [total_num_interactions],
+            'num_failed_objects': [num_failed_objects],
+            'total_iou': [total_iou],
+            'dataset_iou_list': [dataset_iou_list]
+            }
 
 
 @contextmanager
@@ -314,6 +312,7 @@ def inference_context(model):
     model.eval()
     yield
     model.train(training_mode)
+
 
 def get_summary(dataset_iou_list, max_clicks=20, iou_thres=0.85):
 
