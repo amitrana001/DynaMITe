@@ -15,7 +15,7 @@ from detectron2.projects.point_rend.point_features import (
 class AvgClicksPoolingInitializer(nn.Module):
 
     def __init__(self, multi_scale: bool = True,  use_coords_on_point_mask: bool=True,
-                use_point_features: bool=True):
+                use_point_features: bool=False):
         super().__init__()
         self.fg_thresh = 0.5
         self.bg_thresh = 0.5
