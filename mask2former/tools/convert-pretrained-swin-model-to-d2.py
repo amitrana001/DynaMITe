@@ -24,14 +24,14 @@ if __name__ == "__main__":
 
     obj = torch.load(input, map_location="cpu")["model"]
     #source_weights = torch.load(args.source_model)
-    converted_weights = {}
-    keys = list(obj.keys())
+    #converted_weights = {}
+    #keys = list(obj.keys())
 
-    prefix = 'backbone.'
-    for key in keys:
-        converted_weights[prefix+key] = obj[key]
+    #prefix = 'backbone.'
+    # for key in keys:
+    #    converted_weights[prefix+key] = obj[key]
 
-    res = {"model": converted_weights, "__author__": "third_party", "matching_heuristics": True}
+    res = {"model": obj, "__author__": "third_party", "matching_heuristics": True}
 
     with open(sys.argv[2], "wb") as f:
         pkl.dump(res, f)

@@ -10,11 +10,11 @@ MODEL:
     APE: False
     DROP_PATH_RATE: 0.3
     PATCH_NORM: True
-  WEIGHTS: "weights/swin_tiny_patch4_window7_224.pth"
+  WEIGHTS: "weights/swin_tiny_patch4_window7_224.pkl"
   PIXEL_MEAN: [123.675, 116.280, 103.530]
   PIXEL_STD: [58.395, 57.120, 57.375]
   SEM_SEG_HEAD:
-    REFINE_MASK_FEATURES: False
+    REFINE_MASK_FEATURES: True
 ITERATIVE:
   TRAIN:
     PER_OBJ_SAMPLING: False

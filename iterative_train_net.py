@@ -268,7 +268,7 @@ class Trainer(DefaultTrainer):
                 for iou in iou_threshold:
                     for s in range(3):
                         # model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + f"_S{s}"
-                        model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + cfg.MODEL.WEIGHTS.split("/")[-1][:-4] + f"_S{s}"
+                        model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + cfg.MODEL.WEIGHTS.split("/")[-1][5:-4] + f"_S{s}"
                         results_i = get_avg_noc(model, data_loader, cfg, iou_threshold = iou,
                                                 dataset_name=dataset_name,sampling_strategy=s,
                                                 max_interactions=max_interactions)

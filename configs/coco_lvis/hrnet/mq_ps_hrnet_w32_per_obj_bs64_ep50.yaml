@@ -1,16 +1,9 @@
-_BASE_: swin-base.yaml
+_BASE_: hrnet-base.yaml
 MODEL:
   BACKBONE:
-    NAME: "D2SwinTransformer"
-  SWIN:
-    EMBED_DIM: 96
-    DEPTHS: [2, 2, 6, 2]
-    NUM_HEADS: [3, 6, 12, 24]
-    WINDOW_SIZE: 7
-    APE: False
-    DROP_PATH_RATE: 0.3
-    PATCH_NORM: True
-  WEIGHTS: "weights/swin_tiny_patch4_window7_224.pkl"
+    NAME: "HigherResolutionNet"
+    FREEZE_AT: 0
+  WEIGHTS: "weights/hrnetv2_w32_imagenet_pretrained_trans.pth"
   PIXEL_MEAN: [123.675, 116.280, 103.530]
   PIXEL_STD: [58.395, 57.120, 57.375]
   SEM_SEG_HEAD:
@@ -25,10 +18,10 @@ ITERATIVE:
 INPUT:
   IMAGE_SIZE: 1024
 SOLVER:
-  IMS_PER_BATCH: 32
+  IMS_PER_BATCH: 64
   BASE_LR: 0.0001
-  STEPS: (163889, 177546) #(327778, 355092)
-  MAX_ITER: 184375 #368750
+  STEPS: (81945, 88773) #(163889, 177546) #(327778, 355092)
+  MAX_ITER: 92188 #184375 #368750
 DATASETS:
   TRAIN: ("coco_lvis_2017_train",)
 INPUT:

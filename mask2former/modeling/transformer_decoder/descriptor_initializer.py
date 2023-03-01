@@ -55,7 +55,7 @@ class AvgClicksPoolingInitializer(nn.Module):
                         W = float(w*8)
                         point_coords_per_image[:,0]/=H
                         point_coords_per_image[:,1]/=W
-
+                        point_coords_per_image = point_coords_per_image.flip(-1)
                         for i in range(feature_levels):
                             fmap = features[i]
                             feat_b_num = fmap[b_num].unsqueeze(0)
@@ -160,6 +160,7 @@ class AvgClicksPoolingInitializer(nn.Module):
             points_coords_on_mask = torch.stack(torch.where(mask_i),dim=1).to(dtype=torch.float)
             points_coords_on_mask[:,0]/=float(H)
             points_coords_on_mask[:,1]/=float(W)
+            points_coords_on_mask = points_coords_on_mask.flip(-1)
             y = point_sample(fmap, points_coords_on_mask.unsqueeze(0),align_corners=False) # 1xCxPoints
             fg_init.append(y.mean(2).squeeze(0))
         
