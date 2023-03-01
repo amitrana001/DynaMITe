@@ -56,23 +56,6 @@ def get_avg_noc(
     total_compute_time = 0
     total_eval_time = 0
 
-    # model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + f"_S{sampling_strategy}"
-    # save_vis_path = os.path.join("./output/evaluation", dataset_name, f"{model_name}_S{sampling_strategy}_{start_time}/")
-    
-    # save_stats_path = os.path.join("./output/evaluation",  f'{dataset_name}.txt')
-    # if not os.path.exists(save_stats_path):
-    #     header = ["model","NOC_80", "NOC_85", "NOC_90", "NFO_80","NFO_85","NFO_90","IOU_80","IOU_85", "IOU_90","#samples","#clicks"]
-    #     with open(save_stats_path, 'w') as f:
-    #         writer = csv.writer(f, delimiter= "\t")
-    #         writer.writerow(header)
-
-    # import pickle
-    # from collections import defaultdict
-    # pt_sampled_dict = defaultdict(list)
-    # with open("output/pt_sampled_dict.pickle", 'rb') as f:
-    #     pt_sampled_dict = pickle.load(f)
-
-    # features_dicts = {}
     with ExitStack() as stack:
         if isinstance(model, nn.Module):
             stack.enter_context(inference_context(model))
@@ -102,7 +85,8 @@ def get_avg_noc(
             
             not_clicked_map = np.ones_like(gt_masks[0], dtype=np.bool)
             if sampling_strategy == 0:
-                coords = inputs[0]["coords"]
+                # coords = inputs[0]["coords"]
+                coords = inputs[0]['fg_click_coords'][0][0][:2]
                 not_clicked_map[coords[0], coords[1]] = False
             elif sampling_strategy == 1:
                 point_mask = inputs[0]['fg_scrbs'][0][0].to('cpu')
@@ -129,7 +113,8 @@ def get_avg_noc(
             (processed_results, outputs, images, scribbles,
             num_insts, features, mask_features,
             transformer_encoder_features, multi_scale_features,
-            batched_num_scrbs_per_mask) = model(inputs)
+            batched_num_scrbs_per_mask,batched_fg_coords_list,
+            batched_bg_coords_list) = model(inputs)
             orig_device = images.tensor.device
 
             # save_visualization(inputs[0], gt_masks, scribbles[0], save_vis_path,  ious[0], num_interactions-1,  alpha_blend=0.6)
@@ -158,26 +143,32 @@ def get_avg_noc(
                         total_num_interactions+=1
                         scrbs = prepare_scribbles(scrbs,images)
                         if is_fg:
-
                             scribbles[0][i] = torch.cat([scribbles[0][i], scrbs], 0)
                             batched_num_scrbs_per_mask[0][i] += 1
+                            # last_coords = batched_fg_coords_list[0][i][-1]
+                            # prev_timestamp = last_coords[-1]
+                            # new_timestamp = prev_timestamp +1
+                            batched_fg_coords_list[0][i].extend([[coords[0], coords[1],num_interactions]])
                         else:
-                            if scribbles[0][-1] is None:
-                                scribbles[0][-1] = scrbs
-                            else:
+                            # to-do handling of new timestamp 
+                            if batched_bg_coords_list[0]:
                                 scribbles[0][-1] = torch.cat((scribbles[0][-1],scrbs))
-                
+                                batched_bg_coords_list[0].extend([[coords[0], coords[1],num_interactions]])
+                            else:
+                                scribbles[0][-1] = scrbs
+                                batched_bg_coords_list[0] = [[coords[0], coords[1],num_interactions]]
+                prev_mask_logits=None               
                 (processed_results, outputs, images, scribbles,
                 num_insts, features, mask_features, transformer_encoder_features,
-                multi_scale_features, batched_num_scrbs_per_mask)= model(inputs, images, scribbles, num_insts,
-                                                                        features, mask_features, transformer_encoder_features,
-                                                                        multi_scale_features, batched_num_scrbs_per_mask=batched_num_scrbs_per_mask)
+                multi_scale_features, batched_num_scrbs_per_mask, batched_fg_coords_list,
+                batched_bg_coords_list)= model(inputs, images, scribbles, num_insts,
+                                               features, mask_features, transformer_encoder_features,
+                                               multi_scale_features, prev_mask_logits,
+                                               batched_num_scrbs_per_mask,
+                                               batched_fg_coords_list, batched_bg_coords_list)
                 
                 pred_masks = processed_results[0]['instances'].pred_masks.to('cpu',dtype=torch.uint8)
                 pred_masks = torchvision.transforms.Resize(size = (h_t,w_t))(pred_masks)
-
-                if is_post_process:
-                    pred_masks = post_process(pred_masks,inputs[0]['fg_scrbs'],ious,iou_threshold)
                 
                 ious = compute_iou(gt_masks,pred_masks,ious,iou_threshold,ignore_masks)
                 per_image_iou_list.append(ious[0].item())
@@ -193,17 +184,6 @@ def get_avg_noc(
                 total_iou += iou
                 if iou<iou_threshold:
                     num_failed_objects+=1
-            # if num_interactions >= max_interactions:
-            #     # print(inputs[0]["image_id"])
-            #     for iou in ious:
-            #         if iou<iou_threshold:
-            #             num_failed_objects+=1
-            # for iou in ious:
-            #     total_iou += iou
-
-            ###--------------
-            # if torch.cuda.is_available():
-            #     torch.cuda.synchronize()
             total_compute_time += time.perf_counter() - start_compute_time
 
 
@@ -232,17 +212,7 @@ def get_avg_noc(
                 )
             start_data_time = time.perf_counter()
 
-    # now = datetime.datetime.now()
-    # # dd/mm/YY H:M:S
-    # dt_string = now.strftime("%d_%m_%Y_%H_%M_%S_")
-    # features_dict_path = f"output/{cfg.DATASETS.TEST[0]}_features_dict_{dt_string}.pickle"
-    # points_dict_path = f"output/{cfg.DATASETS.TEST[0]}_points_dict_{dt_string}.pickle"
-    # with open(features_dict_path, 'wb') as handle:
-    #     pickle.dump(features_dicts, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    
-    # with open(points_dict_path, 'wb') as handle:
-    #             pickle.dump(pt_sampled_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    # Measure the time only for this worker (before the synchronization barrier)
+   
     total_time = time.perf_counter() - start_time
     total_time_str = str(datetime.timedelta(seconds=total_time))
     # NOTE this format is parsed by grep
@@ -258,47 +228,12 @@ def get_avg_noc(
         )
     )
 
-    # logger.info(
-    #     "Total number of instances: {}, Average num of interactions:{}".format(
-    #         total_num_instances, total_num_interactions/total_num_instances
-    #     )
-    # )
-    # logger.info(
-    #     "Total number of failed cases: {}, Avg IOU: {}".format(
-    #         num_failed_objects, total_iou/total_num_instances
-    #     )
-    # )
-    #
-    # NOC_80, NFO_80, IOU_80 = get_summary(dataset_iou_list, max_clicks=max_interactions, iou_thres=0.80)
-    # NOC_85, NFO_85, IOU_85 = get_summary(dataset_iou_list, max_clicks=max_interactions, iou_thres=0.85)
-    # NOC_90, NFO_90, IOU_90 = get_summary(dataset_iou_list, max_clicks=max_interactions, iou_thres=0.90)
-    #
-    # row = [model_name, NOC_80, NOC_85, NOC_90, NFO_80, NFO_85, NFO_90, IOU_80, IOU_85, IOU_90, total_num_instances, max_interactions]
-    # with open(save_stats_path, 'a') as f:
-    #     writer = csv.writer(f, delimiter= "\t")
-    #     writer.writerow(row)
-    #
-    # from prettytable import PrettyTable
-    # table = PrettyTable()
-    # table.field_names = ["dataset","NOC_80", "NOC_85", "NOC_90", "NFO_80","NFO_85","NFO_90","#samples", "#clicks"]
-    # table.add_row([dataset_name, NOC_80, NOC_85, NOC_90, NFO_80, NFO_85, NFO_90, total_num_instances, max_interactions])
-    #
-    # print(table)
-    # with EventStorage() as s:
-    # if comm.is_main_process():
-    #     # storage = get_event_storage()
-    
-    #     storage = get_event_storage()
-    #     storage.put_scalar(f"NOC_{iou_threshold*100}", total_num_interactions/total_num_instances)
-    #     storage.put_scalar("Avg IOU", total_iou/total_num_instances)
-    #     storage.put_scalar("Failed Cases", num_failed_objects)
     return {'total_num_instances': [total_num_instances],
             'total_num_interactions': [total_num_interactions],
             'num_failed_objects': [num_failed_objects],
             'total_iou': [total_iou],
             'dataset_iou_list': [dataset_iou_list]
             }
-
 
 @contextmanager
 def inference_context(model):
@@ -312,5 +247,3 @@ def inference_context(model):
     model.eval()
     yield
     model.train(training_mode)
-
-

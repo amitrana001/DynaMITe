@@ -13,23 +13,41 @@ def compute_iou(gt_masks, pred_masks, max_objs=15, iou_thres = 0.90):
     intersections = np.sum(np.logical_and(gt_masks, pred_masks), (1,2))
     unions = np.sum(np.logical_or(gt_masks,pred_masks), (1,2))
     ious = intersections/unions
-    bool_indices = (ious<iou_thres)
+    
     indices = torch.topk(torch.tensor(ious), len(ious),largest=False).indices
-    return indices[bool_indices][:max_objs]
+    worst_indexs = []
+    i=0
+    while(i<max_objs and i<len(indices)):
+        if ious[indices[i]] < iou_thres:
+            worst_indexs.append(indices[i])
+        i+=1
+        if len(worst_indexs)==max_objs:
+            break
+    return worst_indexs
 
 def compute_fn_iou(gt_masks, pred_masks, bg_mask, max_objs=15, iou_thres = 0.90):
 
-    ious = np.zeros(gt_masks.shape[0])
+    fn_ratio = np.zeros(gt_masks.shape[0])
     for i, (gt_mask, pred_mask) in enumerate(zip(gt_masks,pred_masks)):
-        _pred_mask = np.logical_xor(pred_mask,bg_mask)
-        intersection = _pred_mask.sum()
-        union = gt_mask.sum()
-        ious[i] = intersection/union
-    bool_indices = (ious<iou_thres)
-    indices = torch.topk(torch.tensor(ious), len(ious),largest=False).indices
-    return indices[bool_indices][:max_objs]
+        # _pred_mask = np.logical_and(pred_mask,gt_mask)
+        fn = np.logical_and(np.logical_not(pred_mask), gt_mask)
+        fn_area = fn.sum()
+        gt_area = gt_mask.sum()
+        fn_ratio[i] = fn_area/gt_area
+    # bool_indices = (fn_ratio>0)
+    # ious = ious[bool_indices]
+    indices = torch.topk(torch.tensor(fn_ratio), len(fn_ratio),largest=True).indices
+    worst_indexs = []
+    i=0
+    while(i<max_objs and i < len(indices)):
+        if fn_ratio[indices[i]] > 0:
+            worst_indexs.append(indices[i])
+        i+=1
+        if len(worst_indexs)==max_objs:
+            break
+    return worst_indexs
 
-def _get_next_coords_bg(all_fp, timestamp,device, max_num_points=2, use_largest_cc = True):
+def _get_next_coords_bg(all_fp, timestamp,device, max_num_points=2, use_largest_cc = True, unique_timestamp=False):
 
     _probs = [0.80,0.20]
     if use_largest_cc:
@@ -59,12 +77,14 @@ def _get_next_coords_bg(all_fp, timestamp,device, max_num_points=2, use_largest_
             _pm = create_circular_mask(H, W, centers=[coords], radius=3)
             point_masks.append(_pm)
             points_coords.append([coords[0], coords[1],timestamp])
+            if unique_timestamp:
+                timestamp+=1
         point_masks = torch.from_numpy(np.stack(point_masks, axis=0)).to(device=device, dtype=torch.uint8)
         return (points_coords, point_masks)
     else:
         return None
 
-def _get_next_coords_fg(pred_mask, gt_mask, timestamp, device,max_num_points=2):
+def _get_next_coords_fg(pred_mask, gt_mask, timestamp, device,max_num_points=2, unique_timestamp=False):
 
     fn = np.logical_and(np.logical_not(pred_mask), gt_mask)
     error_mask = np.pad(fn, ((1, 1), (1, 1)), 'constant').astype(np.uint8)
@@ -90,13 +110,15 @@ def _get_next_coords_fg(pred_mask, gt_mask, timestamp, device,max_num_points=2):
             _pm = create_circular_mask(H, W, centers=[coords], radius=3)
             point_masks.append(_pm)
             points_coords.append([coords[0], coords[1],timestamp])
+            if unique_timestamp:
+                timestamp+=1
             # points_coords.append(coords)
         point_masks = torch.from_numpy(np.stack(point_masks, axis=0)).to(device=device, dtype=torch.uint8)
         return (points_coords, point_masks)
     else:
         return None
     
-def _get_corrective_clicks(pred_mask, gt_mask, bg_mask, timestamp, device, max_num_points=2):
+def _get_corrective_clicks(pred_mask, gt_mask, bg_mask, timestamp, device, max_num_points=2,unique_timestamp=False):
     
     pred_mask = pred_mask > 0.5
     gt_mask = gt_mask > 0.5
@@ -132,6 +154,8 @@ def _get_corrective_clicks(pred_mask, gt_mask, bg_mask, timestamp, device, max_n
             _pm = create_circular_mask(H, W, centers=[coords], radius=3)
             point_masks.append(_pm)
             points_coords.append([coords[0], coords[1],timestamp])
+            if unique_timestamp:
+                timestamp+=1
             # points_coords.append(coords)
         point_masks = torch.from_numpy(np.stack(point_masks, axis=0)).to(device=device, dtype=torch.uint8)
         return (points_coords, point_masks, is_fg)
@@ -139,7 +163,8 @@ def _get_corrective_clicks(pred_mask, gt_mask, bg_mask, timestamp, device, max_n
         return None
 
 def get_next_clicks_mq(targets, pred_output, timestamp, device, scribbles = None, batched_num_scrbs_per_mask=None,
-                       batched_fg_coords_list=None, batched_bg_coords_list = None, per_obj_sampling = True
+                       batched_fg_coords_list=None, batched_bg_coords_list = None, per_obj_sampling = True, 
+                       unique_timestamp=False, batched_max_timestamp = None
 ):
     
     # OPTIMIZATION
@@ -152,7 +177,8 @@ def get_next_clicks_mq(targets, pred_output, timestamp, device, scribbles = None
         for i, (gt_masks_per_image, pred_masks_per_image, bg_mask_per_image) in enumerate(zip(gt_masks_batch, pred_masks_batch, bg_masks_batch)):
             
             indices = compute_iou(gt_masks_per_image,pred_masks_per_image)
-            
+            if unique_timestamp:
+                timestamp = batched_max_timestamp[i]+1
             if scribbles:
                 for j in indices:
                     sampled_coords_info = _get_corrective_clicks(pred_masks_per_image[j], gt_masks_per_image[j],
@@ -161,6 +187,8 @@ def get_next_clicks_mq(targets, pred_output, timestamp, device, scribbles = None
                     
                     if sampled_coords_info is not None:
                         point_coords, point_masks, is_fg = sampled_coords_info
+                        if unique_timestamp:
+                            timestamp += len(point_coords)
                         if is_fg:
                             scribbles[i][j] = torch.cat([scribbles[i][j],point_masks],0)
                             batched_fg_coords_list[i][j].extend(point_coords)
@@ -173,23 +201,11 @@ def get_next_clicks_mq(targets, pred_output, timestamp, device, scribbles = None
                                 batched_bg_coords_list[i] = point_coords
                                 scribbles[i][-1] = point_masks
                             assert scribbles[i][-1].shape[0] == len(batched_bg_coords_list[i])
-            # else:
-            #     for j in indices:
-            #         sampled_coords_info = _get_corrective_clicks(pred_masks_per_image[j], gt_masks_per_image[j],
-            #                                                     bg_mask_per_image, timestamp = timestamp, max_num_points=2)
-                    
-            #         if sampled_coords_info is not None:
-            #             point_coords, is_fg = sampled_coords_info
-            #             if is_fg:
-            #                 batched_fg_coords_list[i][j].extend(point_coords)
-            #                 batched_num_scrbs_per_mask[i][j]+= len(point_coords)
-            #             else:
-            #                 if batched_bg_coords_list[i] is None:
-            #                     batched_bg_coords_list[i] = point_coords
-            #                 else:
-            #                     batched_bg_coords_list[i].extend(point_coords)
-    
-        return batched_num_scrbs_per_mask, scribbles, batched_fg_coords_list, batched_bg_coords_list 
+            if unique_timestamp:
+                batched_max_timestamp[i] = timestamp-1
+        if unique_timestamp:
+            return batched_num_scrbs_per_mask, scribbles, batched_fg_coords_list, batched_bg_coords_list, batched_max_timestamp
+        return batched_num_scrbs_per_mask, scribbles, batched_fg_coords_list, batched_bg_coords_list
     else:
         if scribbles:
             for i, (gt_masks_per_image, pred_masks_per_image, bg_mask_per_image) in enumerate(zip(gt_masks_batch, pred_masks_batch, bg_masks_batch)):
@@ -199,10 +215,16 @@ def get_next_clicks_mq(targets, pred_output, timestamp, device, scribbles = None
                 
                 all_fp = np.logical_and(bg_mask_per_image, comb_pred_mask).astype(np.uint8)
                 all_fn = np.logical_and(np.logical_not(comb_pred_mask), comb_fg_mask).astype(np.uint8)
+                if unique_timestamp:
+                    timestamp = batched_max_timestamp[i]+1
                 if all_fp.sum() > all_fn.sum():
                     sampled_coords_info = _get_next_coords_bg(all_fp,timestamp,device)
                     if sampled_coords_info is not None:
                         sampled_bg_coords, bg_point_masks = sampled_coords_info
+
+                        if unique_timestamp:
+                            timestamp += len(sampled_bg_coords)
+                        
                         if batched_bg_coords_list[i]:
                             batched_bg_coords_list[i].extend(sampled_bg_coords)
                             scribbles[i][-1] = torch.cat([scribbles[i][-1],bg_point_masks],0)
@@ -219,9 +241,15 @@ def get_next_clicks_mq(targets, pred_output, timestamp, device, scribbles = None
                         
                         if sampled_coords_info is not None:
                             sampled_fg_coords, fg_point_masks = sampled_coords_info
-
+                            
+                            if unique_timestamp:
+                                timestamp += len(sampled_fg_coords)
                             scribbles[i][j] = torch.cat([scribbles[i][j],fg_point_masks],0)
                             batched_fg_coords_list[i][j].extend(sampled_fg_coords)
                             batched_num_scrbs_per_mask[i][j]+= len(sampled_fg_coords)
-            return batched_num_scrbs_per_mask, scribbles, batched_fg_coords_list, batched_bg_coords_list 
+                if unique_timestamp:
+                    batched_max_timestamp[i] = timestamp-1
+            if unique_timestamp:
+                return batched_num_scrbs_per_mask, scribbles, batched_fg_coords_list, batched_bg_coords_list, batched_max_timestamp
+            return batched_num_scrbs_per_mask, scribbles, batched_fg_coords_list, batched_bg_coords_list  
                   

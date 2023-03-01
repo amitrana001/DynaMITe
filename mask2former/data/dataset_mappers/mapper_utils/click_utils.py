@@ -30,7 +30,7 @@ def generate_probs(max_num_points, gamma):
 
     return probs
 
-def get_clicks_coords(masks, max_num_points=6, radius_size=8, first_click_center=True, all_masks=None, t= 0):
+def get_clicks_coords(masks, max_num_points=6, radius_size=8, first_click_center=True, all_masks=None, t= 0, unique_timestamp=False):
 
     """
     :param masks: numpy array of shape I x H x W
@@ -55,6 +55,8 @@ def get_clicks_coords(masks, max_num_points=6, radius_size=8, first_click_center
             _pm = create_circular_mask(H, W, centers=[center_coords], radius=radius_size)
             point_masks_per_obj.append(_pm)
             coords.append([center_coords[0], center_coords[1], t])
+            if unique_timestamp:
+                t+=1
             num_scrbs_per_mask[i]+=1 
         
         kernel = np.ones((3,3),np.uint8)
@@ -71,6 +73,8 @@ def get_clicks_coords(masks, max_num_points=6, radius_size=8, first_click_center
             point_masks_per_obj.append(_pm)
 
             coords.append([point_coords[0], point_coords[1], t])
+            if unique_timestamp:
+                t+=1
             num_scrbs_per_mask[i]+=1
         fg_coords_list.append(coords)
         fg_point_masks.append(torch.from_numpy(np.stack(point_masks_per_obj, axis=0)).to(torch.uint8))
@@ -93,6 +97,8 @@ def get_clicks_coords(masks, max_num_points=6, radius_size=8, first_click_center
         _pm = create_circular_mask(H, W, centers=[point_coords], radius=3)
         point_masks_per_bg.append(_pm)
         bg_coords_list.append([point_coords[0], point_coords[1], t])
+        if unique_timestamp:
+            t+=1
     if len(point_masks_per_bg):
         bg_point_masks = torch.from_numpy(np.stack(point_masks_per_bg, axis=0)).to(torch.uint8)    
 

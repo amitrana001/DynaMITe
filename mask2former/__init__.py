@@ -3,7 +3,7 @@ from . import data  # register all new datasets
 from . import modeling
 
 # config
-from .config import add_maskformer2_config
+from .config import add_maskformer2_config, add_hrnet_config
 
 # dataset loading
 
@@ -18,22 +18,12 @@ from .data.dataset_mappers.clicks.coco_lvis_single_inst_mq_clicks_mapper import 
 from .data.dataset_mappers.eval.coco_Mval_eval_multi_insts_datamapper import COCOMvalMultiInstsDatasetMapper
 from .data.dataset_mappers.eval.davis17_scribbles_datamapper import DAVIS17ScribblesDatasetMapper
 from .data.dataset_mappers.eval.davis17_deterministic_clicks_mapper import DAVIS17DetmClicksDatasetMapper
-# from .data.dataset_mappers.eval.davis17_sbd_mq_evaluation_clicks_mapper import DAVIS17SBDEvalMQClicksDatasetMapper
-# from .data.dataset_mappers.clicks.lvis_multi_inst_clicks_dataset_mapper import LVISMultiInstClicksDatasetMapper
-# from .data.dataset_mappers.clicks.coco_single_inst_stuff_clicks_mapper import COCOSingleInstStuffClicksDatasetMapper
-# from .data.dataset_mappers.clicks.coco_single_inst_clicks_mapper import COCOSingleInstClicksDatasetMapper
-# from .data.dataset_mappers.clicks.coco_multi_inst_clicks_dataset_mapper import COCOMultiInstClicksDatasetMapper
-# from .data.dataset_mappers.clicks.coco_all_inst_clicks_dataset_mapper import COCOAllInstClicksDatasetMapper
-# from .data.dataset_mappers.clicks.coco_multi_inst_stuff_clicks_mapper import COCOMultiInstStuffClicksDatasetMapper
 from .data.dataset_mappers.clicks.coco_multi_inst_multi_queries_stuff_clicks_mapper import COCOMultiInstStuffMultiQueriesClicksDatasetMapper
 from .data.dataset_mappers.clicks.coco_single_inst_multi_queries_stuff_clicks_mapper import COCOSingleInstMultiQueriesStuffClicksDatasetMapper
-from .data.dataset_mappers.eval.coco_eval_deterministic_clicks_dataset_mapper import COCOEvalDetmClicksDatasetMapper
+from .data.dataset_mappers.eval.coco_eval_mq_coords_mapper import COCOEvalMQCoordsMapper
+from .data.dataset_mappers.coco_mval_dataset_mapper_coords import COCOMvalCoordsDatasetMapper
+from .data.dataset_mappers.eval.davis_sbd_mq_coords_eval_mapper import DAVISSBDMQCoordsEvalMapper
 
-
-# models
-# from .maskformer_model import MaskFormer
-# from .iterative_maskformer_model import IterativeMaskFormer
-# from .new_iterative_maskformer_model import NewIterativeMaskFormer
 from .test_time_augmentation import SemanticSegmentorWithTTA
 from .iterative_m2f_model import IterativeMask2Former
 from .iterative_m2f_mq_model import IterativeMask2FormerMQ

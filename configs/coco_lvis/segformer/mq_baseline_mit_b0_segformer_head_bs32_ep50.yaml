@@ -1,0 +1,39 @@
+_BASE_: segformer-base.yaml
+MODEL:
+  BACKBONE:
+    NAME: "segformer"
+    FREEZE_AT: 0
+  MIT_BACKBONE:
+    NAME: "b0"
+  WEIGHTS: "weights/segformer/mit_b0_trans.pth"
+  PIXEL_MEAN: [123.675, 116.280, 103.530]
+  PIXEL_STD: [58.395, 57.120, 57.375]
+  SEM_SEG_HEAD:
+    REFINE_MASK_FEATURES: False
+    #pixel decoder is segformer head
+    PIXEL_DECODER_NAME: "SegFormerPixelDecoder"
+    IN_CHANNELS_SEGFORMER: [32, 64, 160, 256]
+    FEATURES_STRIDES_SEGFORMER: [4, 8, 16, 32]
+    IN_INDEXES_SEGFORMER: [0, 1, 2, 3] 
+    #channels=128
+    DROPOUT_RATIO_SEGFORMER: 0.1
+    NUM_CLASSES_SEGFORMER: 1
+ITERATIVE:
+  TRAIN:
+    PER_OBJ_SAMPLING: False
+    USE_POS_COORDS: False
+    USE_TIME_COORDS: False
+    USE_POINT_FEATURES: False
+    USE_COORDS_ON_POINT_MASKS: False
+INPUT:
+  IMAGE_SIZE: 1024
+SOLVER:
+  IMS_PER_BATCH: 32
+  BASE_LR: 0.0001
+  STEPS: (163889, 177546) #(327778, 355092)
+  MAX_ITER: 184375 #368750
+DATASETS:
+  TRAIN: ("coco_lvis_2017_train",)
+INPUT:
+  DATASET_MAPPER_NAME: "coco_lvis_multi_insts_stuff_coords_mq"
+VERSION: 2

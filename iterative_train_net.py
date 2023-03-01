@@ -36,7 +36,7 @@ from detectron2.engine import (
     default_setup,
     launch,
 )
-from mask2former.evaluation.single_instance_evaluation import get_avg_noc, get_summary
+from mask2former.evaluation.single_instance_evaluation import get_avg_noc
 
 from detectron2.projects.deeplab import add_deeplab_config, build_lr_scheduler
 from detectron2.solver.build import maybe_add_gradient_clipping
@@ -54,136 +54,20 @@ from mask2former import (
     COCOLVISMultiInstMQClicksDatasetMapper,
     COCOLVISSingleInstMQClicksDatasetMapper,
     COCOMultiInstStuffMultiQueriesClicksDatasetMapper,
-<<<<<<< Updated upstream
-    COCOSingleInstMultiQueriesStuffClicksDatasetMapper
-=======
     COCOSingleInstMultiQueriesStuffClicksDatasetMapper,
->>>>>>> Stashed changes
+    COCOMvalCoordsDatasetMapper,
+    DAVISSBDMQCoordsEvalMapper,
+    COCOEvalMQCoordsMapper
 )
 
 from mask2former import (
     COCOMvalDatasetMapper,
     SemanticSegmentorWithTTA,
     add_maskformer2_config,
+    add_hrnet_config
 )
 
-
-def log_single_instance(res, max_interactions, dataset_name, model_name):
-    logger = logging.getLogger(__name__)
-    total_num_instances = sum(res['total_num_instances'])
-    total_num_interactions = sum(res['total_num_interactions'])
-    num_failed_objects = sum(res['num_failed_objects'])
-    total_iou = sum(res['total_iou'])
-
-    logger.info(
-        "Total number of instances: {}, Average num of interactions:{}".format(
-            total_num_instances, total_num_interactions / total_num_instances
-        )
-    )
-    logger.info(
-        "Total number of failed cases: {}, Avg IOU: {}".format(
-            num_failed_objects, total_iou / total_num_instances
-        )
-    )
-
-    # 'res['dataset_iou_list'] is a list of dicts which has to be merged into a single dict
-    dataset_iou_list = {}
-    for _d in res['dataset_iou_list']:
-        dataset_iou_list.update(_d)
-
-    NOC_80, NFO_80, IOU_80 = get_summary(dataset_iou_list, max_clicks=max_interactions, iou_thres=0.80)
-    NOC_85, NFO_85, IOU_85 = get_summary(dataset_iou_list, max_clicks=max_interactions, iou_thres=0.85)
-    NOC_90, NFO_90, IOU_90 = get_summary(dataset_iou_list, max_clicks=max_interactions, iou_thres=0.90)
-
-    row = [model_name,
-           NOC_80, NOC_85, NOC_90, NFO_80, NFO_85, NFO_90, IOU_80, IOU_85, IOU_90,
-           total_num_instances,
-           max_interactions]
-
-    save_stats_path = os.path.join("./output/evaluation", f'{dataset_name}.txt')
-    os.makedirs("./output/evaluation", exist_ok=True)
-    if not os.path.exists(save_stats_path):
-        header = ["model",
-                  "NOC_80", "NOC_85", "NOC_90", "NFO_80","NFO_85","NFO_90","IOU_80","IOU_85", "IOU_90",
-                  "#samples","#clicks"]
-        with open(save_stats_path, 'w') as f:
-            writer = csv.writer(f, delimiter= "\t")
-            writer.writerow(header)
-    else:
-        with open(save_stats_path, 'a') as f:
-            writer = csv.writer(f, delimiter="\t")
-            writer.writerow(row)
-
-    from prettytable import PrettyTable
-    table = PrettyTable()
-    table.field_names = ["dataset", "NOC_80", "NOC_85", "NOC_90", "NFO_80", "NFO_85", "NFO_90", "#samples",
-                         "#clicks"]
-    table.add_row(
-        [dataset_name, NOC_80, NOC_85, NOC_90, NFO_80, NFO_85, NFO_90, total_num_instances, max_interactions])
-
-    print(table)
-
-
-def log_multi_instance(res, max_interactions, dataset_name, model_name, iou_threshold=0.85, save_stats_summary=True):
-    logger = logging.getLogger(__name__)
-    total_num_instances = sum(res['total_num_instances'])
-    total_num_interactions = sum(res['total_num_interactions'])
-    num_failed_objects = sum(res['num_failed_objects'])
-    total_iou = sum(res['total_iou'])
-
-    logger.info(
-        "Total number of instances: {}, Average num of interactions:{}".format(
-            total_num_instances, total_num_interactions / total_num_instances
-        )
-    )
-    logger.info(
-        "Total number of failed cases: {}, Avg IOU: {}".format(
-            num_failed_objects, total_iou / total_num_instances
-        )
-    )
-
-    # header = ['Model Name', 'IOU_thres', 'Avg_NOC', 'NOF', "Avg_IOU", "max_num_iters", "num_inst"]
-    NOC = np.round(total_num_interactions / total_num_instances, 2)
-    NCI = sum(res['avg_num_clicks_per_images']) / len(res['avg_num_clicks_per_images'])
-    NFI = len(res['failed_images_ids'])
-    Avg_IOU = np.round(total_iou / total_num_instances, 4)
-    row = [model_name, NCI, NFI, NOC, num_failed_objects, Avg_IOU, iou_threshold, max_interactions, total_num_instances]
-
-    save_stats_path = os.path.join("./output/evaluation", f'{dataset_name}.txt')
-    os.makedirs("./output/evaluation", exist_ok=True)
-    with open(save_stats_path, 'a') as f:
-        writer = csv.writer(f, delimiter="\t")
-        writer.writerow(row)
-
-    if save_stats_summary:
-        summary_stats = {}
-        summary_stats["dataset"] = dataset_name
-        summary_stats["model"] = model_name
-        summary_stats["iou_threshold"] = iou_threshold
-        summary_stats["failed_images_counts"] = NFI
-        summary_stats["avg_over_total_images"] = NCI
-        summary_stats["Avg_NOC"] = NOC
-        summary_stats["Avg_IOU"] = np.round(total_iou / total_num_instances, 4)
-        summary_stats["num_failed_objects"] = num_failed_objects
-        summary_stats["failed_images_ids"] = res['failed_images_ids']
-        summary_stats["failed_objects_areas"] = res['failed_objects_areas']
-        summary_stats["avg_num_clicks_per_images"] = np.mean(res['avg_num_clicks_per_images'])
-        summary_stats["total_computer_time"] = res['total_compute_time_str']
-        summary_stats["time_per_intreaction_tranformer_decoder"] = np.mean(
-            res['time_per_intreaction_tranformer_decoder']
-        )
-        summary_stats["time_per_image_features"] = np.mean(res['time_per_image_features'])
-        summary_stats["time_per_image_annotation"] = np.mean(res['time_per_image_annotation'])
-
-        save_summary_path = os.path.join(f"./output/evaluations/{dataset_name}")
-        os.makedirs(save_summary_path, exist_ok=True)
-        stats_file = os.path.join(save_summary_path,
-                                  f"{model_name}_{max_interactions}_max_click_th_final_updated_time_summary.pickle")
-
-        import pickle
-        with open(stats_file, 'wb') as handle:
-            pickle.dump(summary_stats, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
+from mask2former.evaluation.eval_utils import log_single_instance, log_multi_instance
 
 class Trainer(DefaultTrainer):
     """
@@ -205,10 +89,16 @@ class Trainer(DefaultTrainer):
     def build_test_loader(cls,cfg,dataset_name):
         # evaluation_dataset = cfg.DATASETS.TEST[0]
         if dataset_name in ["GrabCut", "Berkeley", "coco_Mval", "davis_single_inst"]:
-            mapper = COCOMvalDatasetMapper(cfg, False)
+            # mapper = COCOMvalDatasetMapper(cfg, False)
+            mapper = COCOMvalCoordsDatasetMapper(cfg,False)
             return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
         elif dataset_name in ["davis_2017_val", "sbd_single_inst","sbd_multi_insts"]:
-            mapper = DAVIS17DetmClicksDatasetMapper(cfg, False)
+            # mapper = DAVIS17DetmClicksDatasetMapper(cfg, False)
+            mapper = DAVISSBDMQCoordsEvalMapper(cfg,False)
+            return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
+        elif dataset_name == "coco_2017_val":
+            mapper = COCOEvalMQCoordsMapper(cfg,False)
+            
             return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
         else:
             return None
@@ -358,7 +248,7 @@ class Trainer(DefaultTrainer):
             evaluator =None
             if dataset_name in ["coco_2017_val", "davis_2017_val", "sbd_multi_insts"]:
                 model_name = cfg.MODEL.WEIGHTS.split("/")[-2]
-                from mask2former.evaluation.multi_instance_evaluation import evaluate
+                from mask2former.evaluation.multi_instance_evaluation_per_obj_coords import evaluate
                 results_i = evaluate(model, data_loader,cfg, dataset_name)
                 results_i = comm.gather(results_i, dst=0)  # [res1:dict, res2:dict,...]
                 if comm.is_main_process():
@@ -374,9 +264,11 @@ class Trainer(DefaultTrainer):
             else:
                 max_interactions = 20
                 iou_threshold = [0.90]
+                from mask2former.evaluation.single_instance_evaluation_coords import get_avg_noc
                 for iou in iou_threshold:
                     for s in range(3):
-                        model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + f"_S{s}"
+                        # model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + f"_S{s}"
+                        model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + cfg.MODEL.WEIGHTS.split("/")[-1][:-4] + f"_S{s}"
                         results_i = get_avg_noc(model, data_loader, cfg, iou_threshold = iou,
                                                 dataset_name=dataset_name,sampling_strategy=s,
                                                 max_interactions=max_interactions)
@@ -424,6 +316,7 @@ def setup(args):
     # for poly lr schedule
     add_deeplab_config(cfg)
     add_maskformer2_config(cfg)
+    add_hrnet_config(cfg)
     cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
     # if args.eval_only:
@@ -439,10 +332,7 @@ def setup(args):
 def main(args):
     cfg = setup(args)
 
-    # os.environ["NCCL_ASYNC_ERROR_HANDLING"] = str(1)
-    # os.environ["NCCL_P2P_DISABLE"] = str(1)
     # import debugpy
-
     # debugpy.listen(5678)
     # print("Waiting for debugger")
     # debugpy.wait_for_client()
@@ -452,32 +342,12 @@ def main(args):
         DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
             cfg.MODEL.WEIGHTS, resume=args.resume
         )
-
-        # model = DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR)._load_file(
-        #     cfg.MODEL.WEIGHTS
-        # )
-
-        # model = model['model']
-        # model.eval()
-        # model.load_state_dict(torch.load(cfg.MODEL.WEIGHTS)["model"])
-        # model = torch.load(cfg.MODEL.WEIGHTS)['model']
         res = Trainer.test(cfg, model)
-        # if cfg.TEST.AUG.ENABLED:
-        #     res.update(Trainer.test_with_TTA(cfg, model))
-        # if comm.is_main_process():
-        #     verify_results(cfg, res)
+
         return res
 
-    # import pdb; pdb.set_trace()
-    
     trainer = Trainer(cfg)
-    # breakpoint()
     trainer.resume_or_load(resume=args.resume)
-    #Save custom config
-    # with open(cfg.OUTPUT_DIR + "/iterative_cfg.yaml", "w") as f: 
-    #     f.write(cfg.dump())
-    # trainer.resume_or_load(resume=True)
-
     return trainer.train()
 
 

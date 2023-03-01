@@ -333,7 +333,7 @@ def generate_point_to_blob_masks_eval_deterministic(gt_masks, max_num_points=1, 
     return point_to_blob_masks, num_scrbs_per_mask
 
 
-def get_max_dt_point_mask(mask, max_num_pts=1, k=1.7):
+def get_max_dt_point_mask(mask, max_num_pts=1):
     mask = mask.astype(np.uint8)
     # masks[masks == void_label] = 0
 
@@ -362,15 +362,8 @@ def get_gt_points_determinstic(gt_masks, max_num_points=1, radius_size=8, ignore
         if ignore_masks is not None:
             _m = np.logical_and(_m, not_ignores_mask[i]).astype(np.uint8)
         max_dt_loc = get_max_dt_point_mask(_m, max_num_pts=max_num_points)
-        # _pm = np.zeros_like(_m)
         points_per_mask = []
-        # # all_masks = np.logical_or(all_masks, _m)
-        # if sample_locations.shape[0] > 0:
-        #     # all_points_per_mask = np.zeros_like(_m)
-        #     points_per_mask = []
-        #     for loc in sample_locations:
         _pm = create_circular_mask(H, W, centers=[max_dt_loc], radius=radius_size)
-        # all_points_per_mask = np.logical_or(all_points_per_mask, _pm)
         points_per_mask.append(_pm)
         num_scrbs_per_mask[i]+=1
         point_to_blob_masks.append(torch.from_numpy(np.stack(points_per_mask, axis=0)).to(torch.float))

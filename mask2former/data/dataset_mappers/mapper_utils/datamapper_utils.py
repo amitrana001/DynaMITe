@@ -78,7 +78,7 @@ def build_transform_gen(cfg, is_train):
         T.ResizeScale(
             min_scale=min_scale, max_scale=max_scale, target_height=image_size, target_width=image_size
         ),
-        T.FixedSizeCrop(crop_size=(image_size, image_size)),
+        T.FixedSizeCrop(crop_size=(image_size, image_size), seg_pad_value = 0)
     ])
 
     return augmentation
