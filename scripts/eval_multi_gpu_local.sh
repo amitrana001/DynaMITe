@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -x
 
 export PYTHONPATH=.:$PYTHONPATH
 . /home/rana/anaconda3/etc/profile.d/conda.sh
