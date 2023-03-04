@@ -41,6 +41,7 @@ class COCOEvalMQCoordsMapper:
         *,
         tfm_gens,
         image_format,
+        unique_timestamp,
     ):
         """
         NOTE: this interface is experimental.
@@ -58,7 +59,8 @@ class COCOEvalMQCoordsMapper:
         self.img_format = image_format
         self.is_train = is_train
         self.min_area = 500.0
-    
+        self.unique_timestamp = unique_timestamp
+
     @classmethod
     def from_config(cls, cfg, is_train=True):
         # Build augmentation
@@ -68,6 +70,7 @@ class COCOEvalMQCoordsMapper:
             "is_train": is_train,
             "tfm_gens": tfm_gens,
             "image_format": cfg.INPUT.FORMAT,
+            "unique_timestamp": cfg.ITERATIVE.TRAIN.UNIQUE_TIMESTAMP,
         }
         return ret
 
@@ -161,7 +164,9 @@ class COCOEvalMQCoordsMapper:
                 if not len(new_gt_masks):
                     return None
                 new_gt_masks = torch.stack(new_gt_masks,dim=0)
+                assert num_objects == new_gt_masks.shape[0]
 
+                dataset_dict['semantic_map'] = instance_map
                 new_gt_classes = [0]*new_gt_masks.shape[0]
                 # new_gt_boxes = instances.gt_masks.get_bounding_boxes()[random_indices]
                 new_gt_boxes =  Boxes((np.zeros((new_gt_masks.shape[0],4))))
@@ -176,7 +181,7 @@ class COCOEvalMQCoordsMapper:
                 for m in new_gt_masks:
                     all_masks = torch.logical_or(all_masks, m)
 
-                num_scrbs_per_mask, fg_coords_list, bg_coords_list, fg_point_masks, bg_point_masks = get_gt_clicks_coords_eval(new_gt_masks,  max_num_points=1)
+                num_scrbs_per_mask, fg_coords_list, bg_coords_list, fg_point_masks, bg_point_masks = get_gt_clicks_coords_eval(new_gt_masks, unique_timestamp = self.unique_timestamp)
         
                 dataset_dict["fg_scrbs"] = fg_point_masks
                 dataset_dict["bg_scrbs"] = bg_point_masks

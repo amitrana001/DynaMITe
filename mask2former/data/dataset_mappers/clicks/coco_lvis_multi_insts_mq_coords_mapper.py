@@ -199,7 +199,8 @@ class COCOLVISMultiInstMQCoordsDatasetMapper:
                 if not len(gt_masks):
                     return None
                 gt_masks = torch.stack(gt_masks,dim=0)
-
+                # assert num_objects == gt_masks.shape[0]
+                
                 # gt_masks = instances.gt_masks.tensor.to(dtype=torch.uint8)
                 
                 all_masks = dataset_dict["padding_mask"].int()
@@ -215,6 +216,7 @@ class COCOLVISMultiInstMQCoordsDatasetMapper:
                 random_indices = random.sample(range(gt_masks.shape[0]),num_masks)
                 new_gt_masks = gt_masks[random_indices]
                 # new_gt_classes = instances.gt_classes[random_indices]
+
                 new_gt_classes = [0]*new_gt_masks.shape[0]
                 # new_gt_boxes = instances.gt_masks.get_bounding_boxes()[random_indices]
                 new_gt_boxes =  Boxes((np.zeros((new_gt_masks.shape[0],4))))
@@ -224,9 +226,11 @@ class COCOLVISMultiInstMQCoordsDatasetMapper:
                 new_instances.set('gt_boxes', new_gt_boxes) 
                 # filterd_gt_masks = []
                 # print(random_indices)
-                for m in new_gt_masks:
+                semantic_map = torch.zeros((new_gt_masks.shape[-2:]), dtype=torch.int16)
+                for _id, m in enumerate(new_gt_masks):
+                    semantic_map[m == 1] = _id+1
                     all_masks = torch.logical_or(all_masks, m)
-                
+                dataset_dict['semantic_map'] = semantic_map
                 # new_gt_masks = new_gt_masks.unsqueeze(0)
                 # print(new_gt_masks.shape)
                 (num_scrbs_per_mask, fg_coords_list, bg_coords_list,

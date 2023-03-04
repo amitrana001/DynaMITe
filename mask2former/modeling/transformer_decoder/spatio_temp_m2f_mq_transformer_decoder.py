@@ -22,7 +22,7 @@ from detectron2.modeling.postprocessing import sem_seg_postprocess
 from .maskformer_transformer_decoder import TRANSFORMER_DECODER_REGISTRY
 from .descriptor_initializer import AvgClicksPoolingInitializer, AvgPoolingInitializer
 from mask2former.utils import get_new_scribbles_opt, preprocess_batch_data, get_new_points_mq,get_new_points_mq_per_obj,get_next_clicks_mq_per_object
-from mask2former.utils.train_sampling_utils import get_next_clicks_mq
+from mask2former.utils.train_sampling_utils import get_next_clicks_mq, get_next_clicks_mq_argmax
 import cv2
 from detectron2.utils.visualizer import Visualizer
 
@@ -253,9 +253,11 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
         use_pos_coords: bool,
         use_time_coords: bool,
         unique_timestamp: bool,
+        use_argmax: bool,
         use_rev_cross_attn: bool,
         rev_cross_attn_num_layers: int,
         rev_cross_attn_scale: float,
+        use_static_bg_queries: bool,
         num_static_bg_queries: int,
         use_point_clicks: bool,
         per_obj_sampling: bool,
@@ -312,6 +314,7 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
         self.use_time_coords = use_time_coords
         self.unique_timestamp = unique_timestamp
 
+        self.use_argmax = use_argmax
         self.use_coords_on_point_mask = use_coords_on_point_mask
         self.use_point_features = use_point_features
 
@@ -384,8 +387,8 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
                 # nn.Conv2d(in_channels=256, out_channels=64, kernel_size=1)
             )
         
-        if self.random_bg_queries:
-            self.register_parameter("bg_query", nn.Parameter(torch.zeros(hidden_dim), False))
+        # if self.random_bg_queries:
+        #     self.register_parameter("bg_query", nn.Parameter(torch.zeros(hidden_dim), False))
         # self.bg_query = nn.Parameter(torch.zeros(hidden_dim), True)
         # self.bg_query = nn.Embedding(1,hidden_dim)
         # projection layer for generate positional queries
@@ -403,10 +406,13 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
         self.register_parameter("query_embed", nn.Parameter(torch.zeros(hidden_dim), True))
         # self.query_embed = nn.Parameter(torch.zeros(hidden_dim), True)
         # self.query_embed = nn.Embedding(1,hidden_dim)
-        self.use_static_bg_queries = True
+        self.use_static_bg_queries = use_static_bg_queries
         if self.use_static_bg_queries:
             self.register_parameter("static_bg_pe", nn.Parameter(torch.zeros(self.num_static_bg_queries, hidden_dim), True))
             self.register_parameter("static_bg_query", nn.Parameter(torch.zeros(self.num_static_bg_queries,hidden_dim), True))
+            self.register_parameter("bg_query", nn.Parameter(torch.zeros(hidden_dim), False))
+        else:
+            self.register_parameter("bg_query", nn.Parameter(torch.zeros(hidden_dim), True))
 
         # level embedding (we always use 3 scales)
         self.num_feature_levels = 3
@@ -455,6 +461,7 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
         ret["rev_cross_attn_num_layers"] = cfg.REVERSE_CROSS_ATTN.NUM_LAYERS
         ret["rev_cross_attn_scale"] = cfg.REVERSE_CROSS_ATTN.SCALE_FACTOR
 
+        ret["use_argmax"] =  cfg.ITERATIVE.TRAIN.USE_ARGMAX
         # Iterative Pipeline
         ret["max_num_interactions"] = cfg.ITERATIVE.TRAIN.MAX_NUM_INTERACTIONS
         ret["accumulate_loss"] = cfg.ITERATIVE.TRAIN.ACCUMULATE_INTERACTION_LOSS
@@ -466,6 +473,7 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
         ret["use_time_coords"] = cfg.ITERATIVE.TRAIN.USE_TIME_COORDS
         ret["unique_timestamp"] =  cfg.ITERATIVE.TRAIN.UNIQUE_TIMESTAMP
 
+        ret["use_static_bg_queries"] = cfg.ITERATIVE.TRAIN.USE_STATIC_BG_QUERIES
         ret["num_static_bg_queries"] = cfg.ITERATIVE.TRAIN.NUM_STATIC_BG_QUERIES
         ret["use_point_clicks"] = cfg.ITERATIVE.TRAIN.USE_POINTS
         ret["per_obj_sampling"] = cfg.ITERATIVE.TRAIN.PER_OBJ_SAMPLING
@@ -539,10 +547,17 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
                         # scribbles, batched_num_scrbs_per_mask = get_new_points_mq_per_obj(data, processed_results, scribbles,
                         #                                                       random_bg_queries=self.random_bg_queries,
                         #                                                       batched_num_scrbs_per_mask = batched_num_scrbs_per_mask)
-                        next_coords_info = get_next_clicks_mq(data, processed_results,i+1, src[0].device,
+                        if self.use_argmax:
+                            next_coords_info = get_next_clicks_mq_argmax(data, processed_results,i+1, src[0].device,
                                                               scribbles, batched_num_scrbs_per_mask,batched_fg_coords_list, batched_bg_coords_list,
                                                               per_obj_sampling=self.per_obj_sampling, unique_timestamp=self.unique_timestamp,
                                                               batched_max_timestamp = batched_max_timestamp)
+                        else:
+                            next_coords_info = get_next_clicks_mq(data, processed_results,i+1, src[0].device,
+                                                                scribbles, batched_num_scrbs_per_mask,batched_fg_coords_list, batched_bg_coords_list,
+                                                                per_obj_sampling=self.per_obj_sampling, unique_timestamp=self.unique_timestamp,
+                                                                batched_max_timestamp = batched_max_timestamp)
+
                         if self.unique_timestamp:
                             (batched_num_scrbs_per_mask, scribbles, batched_fg_coords_list, batched_bg_coords_list, batched_max_timestamp) = next_coords_info
                             # timestamp+=1
@@ -599,54 +614,50 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
         B, C, H, W = mask_features.shape
         height = 4*H
         width = 4*W
-        if self.use_static_bg_queries:
-            if scribbles is not None:
-                new_scribbles = []
-                for scrbs in scribbles:
-                    if scrbs[-1] is not None:
-                        new_scribbles.append(torch.cat(scrbs))
-                    else:
-                        new_scribbles.append(torch.cat(scrbs[:-1]))
-            # max_scrbs_batch = max([scrbs.shape[0] for scrbs in new_scribbles])
+        
+        if scribbles is not None:
+            new_scribbles = []
+            for scrbs in scribbles:
+                if scrbs[-1] is not None:
+                    new_scribbles.append(torch.cat(scrbs))
+                else:
+                    new_scribbles.append(torch.cat(scrbs[:-1]))
+        # max_scrbs_batch = max([scrbs.shape[0] for scrbs in new_scribbles])
 
-            # _,height,width = new_scribbles[0].shape
-            descriptors = self.query_descriptors_initializer(x, new_scribbles, batched_fg_coords_list, batched_bg_coords_list, height=height, 
-                                                            width=width, random_bg_queries=self.random_bg_queries)
-            max_queries_batch = max([desc.shape[1] for desc in descriptors])
-            for i, desc in enumerate(descriptors):
+        # _,height,width = new_scribbles[0].shape
+        descriptors = self.query_descriptors_initializer(x, new_scribbles, batched_fg_coords_list, batched_bg_coords_list, height=height, 
+                                                        width=width, random_bg_queries=self.random_bg_queries)
+        max_queries_batch = max([desc.shape[1] for desc in descriptors])
+        for i, desc in enumerate(descriptors):
+            if self.use_static_bg_queries:
                 bg_queries = repeat(self.bg_query, "C -> 1 L C", L=max_queries_batch-desc.shape[1])
-                # bg_queries = repeat(self.bg_query, "C -> 1 L C", L=self.num_static_bg_queries)
-                descriptors[i] = torch.cat((descriptors[i], bg_queries), dim=1)
-            output = torch.cat(descriptors, dim=0)
+            else:
+                bg_queries = repeat(self.bg_query, "C -> 1 L C", L=max_queries_batch+1-desc.shape[1])
+            # bg_queries = repeat(self.bg_query, "C -> 1 L C", L=self.num_static_bg_queries)
+            descriptors[i] = torch.cat((descriptors[i], bg_queries), dim=1)
+        output = torch.cat(descriptors, dim=0)
+        
+        query_embed = repeat(self.query_embed, "C -> Q N C", N=bs, Q=output.shape[1])
+        if self.use_pos_coords:
+            scrbs_coords = self.get_pos_tensor_coords(batched_fg_coords_list, batched_bg_coords_list,
+                                                    output.shape[1], height, width, output.device
+                            ) # bsxQx3
+            pos_coord_embed = self.gen_sineembed_for_position(scrbs_coords.permute(1,0,2), use_timestamp=self.use_time_coords) # Q x bs x C
+            pos_coord_embed = self.ca_qpos_sine_proj(pos_coord_embed.to(query_embed.dtype))
             
-            query_embed = repeat(self.query_embed, "C -> Q N C", N=bs, Q=output.shape[1])
-            if self.use_pos_coords:
-                scrbs_coords = self.get_pos_tensor_coords(batched_fg_coords_list, batched_bg_coords_list,
-                                                        output.shape[1], height, width, output.device
-                                ) # bsxQx3
-                pos_coord_embed = self.gen_sineembed_for_position(scrbs_coords.permute(1,0,2), use_timestamp=self.use_time_coords) # Q x bs x C
-                pos_coord_embed = self.ca_qpos_sine_proj(pos_coord_embed.to(query_embed.dtype))
-                
-                query_embed = query_embed + pos_coord_embed
+            query_embed = query_embed + pos_coord_embed
+        if self.use_static_bg_queries:
             static_bg_pe = repeat(self.static_bg_pe, "Bg C -> Bg N C", N=bs)
             query_embed = torch.cat((query_embed,static_bg_pe),dim=0)
             static_bg_queries = repeat(self.static_bg_query, "Bg C -> N Bg C", N=bs)
             output = torch.cat((output,static_bg_queries), dim=1)
-
+    
         # num_scrbs = output.shape[0]
         Bs, num_scrbs, _ = output.shape
         # NxQxC -> QxNxC
         output = self.queries_nonlinear_projection(output).permute(1,0,2)
         # query positional embedding QxNxC
         # query_embed = repeat(self.query_embed, "C -> Q N C", N=bs, Q=num_scrbs)
-        # if self.use_pos_coords:
-        #     scrbs_coords = self.get_pos_tensor_coords(batched_fg_coords_list, batched_bg_coords_list,
-        #                                             num_scrbs, height, width, output.device
-        #                     ) # bsxQx3
-        #     pos_coord_embed = self.gen_sineembed_for_position(scrbs_coords.permute(1,0,2), use_timestamp=self.use_time_coords) # Q x bs x C
-        #     pos_coord_embed = self.ca_qpos_sine_proj(pos_coord_embed.to(query_embed.dtype))
-            
-        #     query_embed = query_embed + pos_coord_embed
 
         # query_embed = None
         predictions_class = []
@@ -857,10 +868,22 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
         # mask_pred = torch.cat([torch.stack(temp_out),splited_masks[-1]])
         mask_pred = torch.stack(temp_out)
 
-        # mask (before sigmoid)
-        mask_pred = mask_pred[:num_instances]
-        # print("after:",mask_pred.shape)
-        result.pred_masks = (mask_pred > 0).float()
+        if self.use_argmax:
+            mask_pred = torch.argmax(mask_pred,0)
+            m = []
+            for i in range(num_instances):
+                m.append((mask_pred == i).float())
+            
+            mask_pred = torch.stack(m)
+            result.pred_masks = mask_pred
+        else:
+            mask_pred = mask_pred[:num_instances]
+            result.pred_masks = (mask_pred > 0).float()
+
+        # # mask (before sigmoid)
+        # mask_pred = mask_pred[:num_instances]
+        # # print("after:",mask_pred.shape)
+        # result.pred_masks = (mask_pred > 0).float()
         result.pred_boxes = Boxes(torch.zeros(mask_pred.size(0), 4))
 
         if mask_cls is None:

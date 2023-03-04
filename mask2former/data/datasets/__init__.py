@@ -10,6 +10,7 @@ from . import (
     register_coco_lvis,
     register_berkeley,
     register_grabcut,
+    register_davis585,
     register_davis17,
     register_davis_single_inst,
     register_coco_mval,

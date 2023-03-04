@@ -39,6 +39,7 @@ class SpatioTempMask2FormerMQ(nn.Module):
         random_bg_queries: bool,
         iterative_evaluation: bool,
         class_agnostic: bool,
+        use_argmax: bool,
         metadata,
         size_divisibility: int,
         sem_seg_postprocess_before_inference: bool,
@@ -95,6 +96,7 @@ class SpatioTempMask2FormerMQ(nn.Module):
         self.class_agnostic = class_agnostic
         self.random_bg_queries = random_bg_queries
 
+        self.use_argmax = use_argmax
         # additional args
         self.semantic_on = semantic_on
         self.instance_on = instance_on
@@ -165,6 +167,8 @@ class SpatioTempMask2FormerMQ(nn.Module):
             ),
             "pixel_mean": cfg.MODEL.PIXEL_MEAN,
             "pixel_std": cfg.MODEL.PIXEL_STD,
+
+            "use_argmax": cfg.ITERATIVE.TRAIN.USE_ARGMAX,
 
             #iterative
             "iterative_evaluation": cfg.ITERATIVE.TEST.INTERACTIVE_EVALAUTION,
@@ -399,8 +403,8 @@ class SpatioTempMask2FormerMQ(nn.Module):
             temp_out.append(torch.max(m, dim=0).values)
         mask_pred = torch.cat([torch.stack(temp_out),splited_masks[-1]]) # can remove splited_masks[-1] all together
 
-        flag = False
-        if flag:
+        # flag = True
+        if self.use_argmax:
             mask_pred = torch.argmax(mask_pred,0)
             m = []
             for i in range(num_instances):

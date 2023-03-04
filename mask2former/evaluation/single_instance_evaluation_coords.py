@@ -175,7 +175,7 @@ def get_avg_noc(
                 num_interactions+=1
                 # save_visualization(inputs[0], pred_masks, scribbles[0], save_vis_path,  ious[0], num_interactions,  alpha_blend=0.6)
             
-            dataset_iou_list[inputs[0]['image_id']] = np.asarray(per_image_iou_list)
+            dataset_iou_list[f"{inputs[0]['image_id']}_{idx}"] = np.asarray(per_image_iou_list)
             
             if torch.cuda.is_available():
                 torch.cuda.synchronize()

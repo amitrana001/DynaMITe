@@ -252,4 +252,110 @@ def get_next_clicks_mq(targets, pred_output, timestamp, device, scribbles = None
             if unique_timestamp:
                 return batched_num_scrbs_per_mask, scribbles, batched_fg_coords_list, batched_bg_coords_list, batched_max_timestamp
             return batched_num_scrbs_per_mask, scribbles, batched_fg_coords_list, batched_bg_coords_list  
+
+def get_next_clicks_mq_argmax(targets, pred_output, timestamp, device, scribbles = None, batched_num_scrbs_per_mask=None,
+                       batched_fg_coords_list=None, batched_bg_coords_list = None, per_obj_sampling = True, 
+                       unique_timestamp=False, batched_max_timestamp = None
+):
+    
+    # OPTIMIZATION
+    # directly take targets as input as they are already on the device
+    gt_masks_batch= [x['instances'].gt_masks.cpu().numpy() for x in targets]
+    pred_masks_batch = [x["instances"].pred_masks.cpu().numpy() for x in pred_output]
+    padding_masks_batch = [x['padding_mask'].cpu().numpy() for x in targets]
+    semantic_maps_batch = [x['semantic_map'].cpu().numpy() for x in targets]
+    
+    
+    for i, (gt_masks_per_image, pred_masks_per_image, semantic_map, padding_mask) in enumerate(zip(gt_masks_batch, pred_masks_batch, semantic_maps_batch,padding_masks_batch)):
+        
+        indices = compute_iou(gt_masks_per_image,pred_masks_per_image)
+        if unique_timestamp:
+            timestamp = batched_max_timestamp[i]+1
+        if scribbles:
+            for j in indices:
+                sampled_coords_info = _get_corrective_clicks_argmax(pred_masks_per_image[j], gt_masks_per_image[j],
+                                                            semantic_map, padding_mask, timestamp = timestamp,
+                                                            unique_timestamp=unique_timestamp,
+                                                            device=device, radius=3, max_num_points=2)
+                
+                if sampled_coords_info is not None:
+                    point_coords, point_masks, obj_indices = sampled_coords_info
+                    if unique_timestamp:
+                        timestamp += len(point_coords)
+                    for k, obj_indx in enumerate(obj_indices):
+                        if obj_indx == -1:
+                            if batched_bg_coords_list[i]:
+                                batched_bg_coords_list[i].extend([point_coords[k]])
+                                scribbles[i][-1] = torch.cat([scribbles[i][-1],point_masks[k].unsqueeze(0)],0)
+                            else:
+                                batched_bg_coords_list[i] = [point_coords[k]]
+                                scribbles[i][-1] = point_masks[k].unsqueeze(0)
+                            assert scribbles[i][-1].shape[0] == len(batched_bg_coords_list[i])
+                        else:
+                            scribbles[i][obj_indx] = torch.cat([scribbles[i][obj_indx],point_masks[k].unsqueeze(0)],0)
+                            batched_fg_coords_list[i][obj_indx].extend([point_coords[k]])
+                            batched_num_scrbs_per_mask[i][obj_indx]+= 1
+        if unique_timestamp:
+            batched_max_timestamp[i] = timestamp-1
+    if unique_timestamp:
+        return batched_num_scrbs_per_mask, scribbles, batched_fg_coords_list, batched_bg_coords_list, batched_max_timestamp
+    return batched_num_scrbs_per_mask, scribbles, batched_fg_coords_list, batched_bg_coords_list
                   
+# from mask2former.data.points.annotation_generator import create_circular_mask, get_max_dt_point_mask
+def _get_corrective_clicks_argmax(pred_mask, gt_mask, semantic_map, padding_mask,timestamp,
+                   unique_timestamp, device, radius=3,  max_num_points=2
+):
+    gt_mask = np.asarray(gt_mask, dtype = np.bool_)
+    pred_mask = np.asarray(pred_mask, dtype = np.bool_)
+    padding_mask = np.asarray(padding_mask, dtype = np.bool_)
+
+    fn_mask =  np.logical_and(gt_mask, np.logical_not(pred_mask))
+    fp_mask =  np.logical_and(np.logical_not(gt_mask), pred_mask)
+    
+    fn_mask = np.logical_and(fn_mask, np.logical_not(padding_mask))
+    fp_mask = np.logical_and(fp_mask, np.logical_not(padding_mask))
+   
+    H, W = gt_mask.shape
+
+    fn_mask = np.pad(fn_mask, ((1, 1), (1, 1)), 'constant')
+    fp_mask = np.pad(fp_mask, ((1, 1), (1, 1)), 'constant')
+
+    fn_mask_dt = cv2.distanceTransform(fn_mask.astype(np.uint8), cv2.DIST_L2, 0)
+    fp_mask_dt = cv2.distanceTransform(fp_mask.astype(np.uint8), cv2.DIST_L2, 0)
+
+    fn_mask_dt = fn_mask_dt[1:-1, 1:-1]
+    fp_mask_dt = fp_mask_dt[1:-1, 1:-1]
+
+    fn_max_dist = np.max(fn_mask_dt)
+    fp_max_dist = np.max(fp_mask_dt)
+
+    if fn_max_dist > fp_max_dist:
+        inner_mask = fn_mask_dt > (fn_max_dist / 2.0)
+    else:
+        inner_mask = fp_mask_dt > (fp_max_dist / 2.0)
+
+    sample_locations = np.argwhere(inner_mask)
+    if len(sample_locations) > 0:
+        _probs = [0.80,0.20]
+        num_points = 1+ np.random.choice(np.arange(max_num_points), p=_probs)
+        num_points = min(num_points, sample_locations.shape[0])
+        
+        indices = random.sample(range(sample_locations.shape[0]), num_points)
+        H, W = pred_mask.shape
+        points_coords = []
+        point_masks = []
+        obj_indices = []
+        for index in indices:
+            coords = sample_locations[index]
+            _pm = create_circular_mask(H, W, centers=[coords], radius=3)
+            point_masks.append(_pm)
+            points_coords.append([coords[0], coords[1],timestamp])
+            obj_indx = semantic_map[coords[0]][coords[1]] -1
+            obj_indices.append(obj_indx)
+            if unique_timestamp:
+                timestamp+=1
+            # points_coords.append(coords)
+        point_masks = torch.from_numpy(np.stack(point_masks, axis=0)).to(device=device, dtype=torch.uint8)
+        return (points_coords, point_masks, obj_indices)
+    else:
+        None

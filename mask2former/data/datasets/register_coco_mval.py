@@ -7,7 +7,7 @@ import numpy as np
 
 def get_coco_mval_dicts(data_dir):
 
-    print("here")
+    # print("here")
     img_dir =  os.path.join(data_dir,"img/")
     gt_mask_dir = os.path.join(data_dir, "gt/")
     files_list = os.listdir(img_dir)

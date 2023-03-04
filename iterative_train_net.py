@@ -50,6 +50,7 @@ from detectron2.evaluation import (
 # MaskFormer
 from mask2former import (
     COCOLVISMultiInstMQCoordsDatasetMapper,
+    COCOLVISSingleInstMQCoordsDatasetMapper,
     DAVIS17DetmClicksDatasetMapper,
     COCOLVISMultiInstMQClicksDatasetMapper,
     COCOLVISSingleInstMQClicksDatasetMapper,
@@ -88,11 +89,11 @@ class Trainer(DefaultTrainer):
     @classmethod
     def build_test_loader(cls,cfg,dataset_name):
         # evaluation_dataset = cfg.DATASETS.TEST[0]
-        if dataset_name in ["GrabCut", "Berkeley", "coco_Mval", "davis_single_inst"]:
+        if dataset_name in ["GrabCut", "Berkeley", "coco_Mval", "davis_single_inst", "davis585"]:
             # mapper = COCOMvalDatasetMapper(cfg, False)
             mapper = COCOMvalCoordsDatasetMapper(cfg,False)
             return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
-        elif dataset_name in ["davis_2017_val", "sbd_single_inst","sbd_multi_insts"]:
+        elif dataset_name in ["davis_2017_val", "sbd_single_inst", "sbd_multi_insts"]:
             # mapper = DAVIS17DetmClicksDatasetMapper(cfg, False)
             mapper = DAVISSBDMQCoordsEvalMapper(cfg,False)
             return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
@@ -121,6 +122,9 @@ class Trainer(DefaultTrainer):
             return build_detection_train_loader_equal(cfg, mapper=mapper)
         elif datset_mapper_name == "coco_lvis_multi_insts_stuff_coords_mq":
             mapper = COCOLVISMultiInstMQCoordsDatasetMapper(cfg,True)
+            return build_detection_train_loader(cfg, mapper=mapper)
+        elif datset_mapper_name == "coco_lvis_single_inst_stuff_coords_mq":
+            mapper = COCOLVISSingleInstMQCoordsDatasetMapper(cfg,True)
             return build_detection_train_loader(cfg, mapper=mapper)
         else:
             mapper = None

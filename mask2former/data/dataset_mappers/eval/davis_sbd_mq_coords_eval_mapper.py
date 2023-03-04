@@ -10,7 +10,7 @@ from detectron2.config import configurable
 from detectron2.data import detection_utils as utils
 from detectron2.data import transforms as T
 from detectron2.data.transforms import TransformGen
-from detectron2.structures import BitMasks, Instances
+from detectron2.structures import BitMasks, Instances, Boxes
 from detectron2.structures.masks import PolygonMasks
 
 from mask2former.data.dataset_mappers.mapper_utils.datamapper_utils import  build_transform_gen
@@ -137,17 +137,50 @@ class DAVISSBDMQCoordsEvalMapper:
             h, w = instances.image_size
         
             if hasattr(instances, 'gt_masks'):
-                gt_masks = instances.gt_masks
+                gt_masks = instances.gt_masks.tensor
                 # gt_masks = convert_coco_poly_to_mask(gt_masks.polygons, h, w)
-                instances.gt_masks = gt_masks.tensor
 
+                mask_areas = torch.sum(gt_masks, (1,2))
+                gt_masks = gt_masks.to(dtype=torch.uint8)
+                gt_masks =  gt_masks[sorted(range(len(mask_areas)),key=mask_areas.__getitem__,reverse=True)]
+
+                instance_map = torch.zeros((gt_masks.shape[-2:]), dtype=torch.int16)
+                num_objects = gt_masks.shape[0]
+                instances_ids = np.arange(1, num_objects + 1)
+
+                for _id, _m in enumerate(gt_masks):
+                    instance_map[_m == 1] = _id+1
+                    assert (_m != 0).sum() > 0
+                
+                new_gt_masks = []
+                for _id in instances_ids:
+                    _m = (instance_map == _id).to(dtype=torch.uint8)
+                    if _m.sum() > 0:
+                        new_gt_masks.append(_m)
+                
+                if not len(new_gt_masks):
+                    return None
+                new_gt_masks = torch.stack(new_gt_masks,dim=0)
+                assert num_objects == new_gt_masks.shape[0]
+                dataset_dict['semantic_map'] = instance_map
+                
+                # instances.gt_masks = gt_masks.tensor
+                new_gt_classes = [0]*new_gt_masks.shape[0]
+                # new_gt_boxes = instances.gt_masks.get_bounding_boxes()[random_indices]
+                new_gt_boxes =  Boxes((np.zeros((new_gt_masks.shape[0],4))))
+                
+                new_instances = Instances(image_size=image_shape)
+                new_instances.set('gt_masks', new_gt_masks)
+                new_instances.set('gt_classes', new_gt_classes)
+                new_instances.set('gt_boxes', new_gt_boxes) 
+                
                 all_masks = dataset_dict["padding_mask"].int()
-                for gt_mask in gt_masks:
+                for gt_mask in new_gt_masks:
                     all_masks = torch.logical_or(all_masks, gt_mask)
 
-                gt_masks = gt_masks.tensor
+                # gt_masks = gt_masks.tensor
                 (num_scrbs_per_mask, fg_coords_list, bg_coords_list,
-                fg_point_masks, bg_point_masks) = get_gt_clicks_coords_eval(gt_masks, unique_timestamp = self.unique_timestamp)
+                fg_point_masks, bg_point_masks) = get_gt_clicks_coords_eval(new_gt_masks, unique_timestamp = self.unique_timestamp)
         
                 dataset_dict["fg_scrbs"] = fg_point_masks
                 dataset_dict["bg_scrbs"] = bg_point_masks
@@ -162,6 +195,6 @@ class DAVISSBDMQCoordsEvalMapper:
             else:
                 return None
 
-            dataset_dict["instances"] = instances
+            dataset_dict["instances"] = new_instances
 
         return dataset_dict

@@ -6,7 +6,9 @@ import numpy as np
 import torch, torchvision
 import cv2
 import logging
-
+import datetime
+import pickle
+from prettytable import PrettyTable
 from detectron2.utils.visualizer import Visualizer
 import torchvision.transforms.functional as F
 from mask2former.data.points.annotation_generator import create_circular_mask, get_max_dt_point_mask
@@ -288,8 +290,8 @@ def get_next_click(
         fn_mask = np.logical_and(fn_mask,~(fg_click_map))
         fp_mask = np.logical_and(fp_mask, ~(bg_click_map))
     
-    if fn_mask.sum()==0:
-        fn_mask = gt_mask
+    # if fn_mask.sum()==0:
+    #     fn_mask = gt_mask
     
     H, W = gt_mask.shape
 
@@ -375,8 +377,8 @@ def log_single_instance(res, max_interactions, dataset_name, model_name):
            total_num_instances,
            max_interactions]
 
-    save_stats_path = os.path.join("./output/evaluation", f'{dataset_name}.txt')
-    os.makedirs("./output/evaluation", exist_ok=True)
+    save_stats_path = os.path.join("./output/evaluation/final_eval", f'{dataset_name}.txt')
+    os.makedirs("./output/evaluation/final_eval", exist_ok=True)
     if not os.path.exists(save_stats_path):
         header = ["model",
                   "NOC_80", "NOC_85", "NOC_90", "NFO_80","NFO_85","NFO_90","IOU_80","IOU_85", "IOU_90",
@@ -384,12 +386,13 @@ def log_single_instance(res, max_interactions, dataset_name, model_name):
         with open(save_stats_path, 'w') as f:
             writer = csv.writer(f, delimiter= "\t")
             writer.writerow(header)
-    else:
-        with open(save_stats_path, 'a') as f:
-            writer = csv.writer(f, delimiter="\t")
-            writer.writerow(row)
+            # writer.writerow(row)
+    
+    with open(save_stats_path, 'a') as f:
+        writer = csv.writer(f, delimiter="\t")
+        writer.writerow(row)
 
-    from prettytable import PrettyTable
+    
     table = PrettyTable()
     table.field_names = ["dataset", "NOC_80", "NOC_85", "NOC_90", "NFO_80", "NFO_85", "NFO_90", "#samples",
                          "#clicks"]
@@ -399,7 +402,8 @@ def log_single_instance(res, max_interactions, dataset_name, model_name):
     print(table)
 
 
-def log_multi_instance(res, max_interactions, dataset_name, model_name, iou_threshold=0.85, save_stats_summary=True):
+def log_multi_instance(res, max_interactions, dataset_name, model_name, iou_threshold=0.85, save_stats_summary=True,
+                       per_obj = True, sampling_strategy = 0):
     logger = logging.getLogger(__name__)
     total_num_instances = sum(res['total_num_instances'])
     total_num_interactions = sum(res['total_num_interactions'])
@@ -424,14 +428,29 @@ def log_multi_instance(res, max_interactions, dataset_name, model_name, iou_thre
     Avg_IOU = np.round(total_iou / total_num_instances, 4)
     row = [model_name, NCI, NFI, NOC, num_failed_objects, Avg_IOU, iou_threshold, max_interactions, total_num_instances]
 
-    save_stats_path = os.path.join("./output/evaluation", f'{dataset_name}.txt')
-    os.makedirs("./output/evaluation", exist_ok=True)
+    table = PrettyTable()
+    table.field_names = ["dataset", "NCI", "NFI", "NOC", "NFO", "Avg_IOU", "max_interactions", "#samples"]
+    table.add_row(
+        [dataset_name, NCI, NFI, NOC, num_failed_objects, Avg_IOU, max_interactions, total_num_instances])
+
+    print(table)
+    # save_stats_path = os.path.join("./output/evaluation", f'{dataset_name}.txt')
+    save_stats_path = os.path.join("./output/evaluation",  f'{dataset_name}.txt')
+    if not os.path.exists(save_stats_path):
+        # print("No File")
+        header = ['Model Name', 'NCI', 'NFI','NOC', 'NFO', "Avg_IOU", 'IOU_thres',"max_num_iters", "num_inst"]
+        with open(save_stats_path, 'w') as f:
+            writer = csv.writer(f, delimiter= "\t")
+            writer.writerow(header)
+            # writer.writerow(row)
+
     with open(save_stats_path, 'a') as f:
-        writer = csv.writer(f, delimiter="\t")
+        writer = csv.writer(f, delimiter= "\t")
         writer.writerow(row)
 
     if save_stats_summary:
         summary_stats = {}
+        summary_stats["sampling_strategy"] = f"S_{sampling_strategy}"
         summary_stats["dataset"] = dataset_name
         summary_stats["model"] = model_name
         summary_stats["iou_threshold"] = iou_threshold
@@ -450,12 +469,33 @@ def log_multi_instance(res, max_interactions, dataset_name, model_name, iou_thre
         summary_stats["time_per_image_features"] = np.mean(res['time_per_image_features'])
         summary_stats["time_per_image_annotation"] = np.mean(res['time_per_image_annotation'])
 
+        ious_objects_per_interaction = {}
+        for _d in res['ious_objects_per_interaction']:
+            ious_objects_per_interaction.update(_d)
+        
+        clicked_objects_per_interaction = {}
+        for _d in res['clicked_objects_per_interaction']:
+            clicked_objects_per_interaction.update(_d)
+        
+        num_instances_per_image = {}
+        for _d in res['num_instances_per_image']:
+            num_instances_per_image.update(_d)
+       
+        summary_stats["clicked_objects_per_interaction"] = clicked_objects_per_interaction
+        summary_stats["ious_objects_per_interaction"] = ious_objects_per_interaction
+        summary_stats['num_instances_per_image'] =  num_instances_per_image
+
+        now = datetime.datetime.now()
+        # dd/mm/YY H:M:S
+        dt_string = now.strftime("%d_%m_%Y_%H_%M_%S_")
+        if per_obj:
+            model_name += "_per_obj_"
+        model_name += dt_string
         save_summary_path = os.path.join(f"./output/evaluations/{dataset_name}")
         os.makedirs(save_summary_path, exist_ok=True)
         stats_file = os.path.join(save_summary_path,
-                                  f"{model_name}_{max_interactions}_max_click_th_final_updated_time_summary.pickle")
+                                  f"{model_name}_{max_interactions}.pickle")
 
-        import pickle
         with open(stats_file, 'wb') as handle:
             pickle.dump(summary_stats, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -465,7 +505,7 @@ def get_summary(dataset_iou_list, max_clicks=20, iou_thres=0.85):
     total_clicks = 0
     failed_objects = 0
     total_iou = 0
-    for (key,per_image_iou_list) in dataset_iou_list.items():
+    for (key, per_image_iou_list) in dataset_iou_list.items():
         vals = per_image_iou_list>=iou_thres
         if np.any(vals):
             num_clicks =  np.argmax(vals) + 1
