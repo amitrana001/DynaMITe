@@ -255,7 +255,7 @@ def get_next_clicks_mq(targets, pred_output, timestamp, device, scribbles = None
 
 def get_next_clicks_mq_argmax(targets, pred_output, timestamp, device, scribbles = None, batched_num_scrbs_per_mask=None,
                        batched_fg_coords_list=None, batched_bg_coords_list = None, per_obj_sampling = True, 
-                       unique_timestamp=False, batched_max_timestamp = None
+                       unique_timestamp=False, batched_max_timestamp = None, use_point_features = True
 ):
     
     # OPTIMIZATION
@@ -276,7 +276,7 @@ def get_next_clicks_mq_argmax(targets, pred_output, timestamp, device, scribbles
                 sampled_coords_info = _get_corrective_clicks_argmax(pred_masks_per_image[j], gt_masks_per_image[j],
                                                             semantic_map, padding_mask, timestamp = timestamp,
                                                             unique_timestamp=unique_timestamp,
-                                                            device=device, radius=3, max_num_points=2)
+                                                            device=device, radius=3, max_num_points=2, use_point_features=use_point_features)
                 
                 if sampled_coords_info is not None:
                     point_coords, point_masks, obj_indices = sampled_coords_info
@@ -286,13 +286,17 @@ def get_next_clicks_mq_argmax(targets, pred_output, timestamp, device, scribbles
                         if obj_indx == -1:
                             if batched_bg_coords_list[i]:
                                 batched_bg_coords_list[i].extend([point_coords[k]])
-                                scribbles[i][-1] = torch.cat([scribbles[i][-1],point_masks[k].unsqueeze(0)],0)
+                                if not use_point_features:
+                                    scribbles[i][-1] = torch.cat([scribbles[i][-1],point_masks[k].unsqueeze(0)],0)
                             else:
                                 batched_bg_coords_list[i] = [point_coords[k]]
-                                scribbles[i][-1] = point_masks[k].unsqueeze(0)
-                            assert scribbles[i][-1].shape[0] == len(batched_bg_coords_list[i])
+                                if not use_point_features:
+                                    scribbles[i][-1] = point_masks[k].unsqueeze(0)
+                            if not use_point_features:
+                                assert scribbles[i][-1].shape[0] == len(batched_bg_coords_list[i])
                         else:
-                            scribbles[i][obj_indx] = torch.cat([scribbles[i][obj_indx],point_masks[k].unsqueeze(0)],0)
+                            if not use_point_features:
+                                scribbles[i][obj_indx] = torch.cat([scribbles[i][obj_indx],point_masks[k].unsqueeze(0)],0)
                             batched_fg_coords_list[i][obj_indx].extend([point_coords[k]])
                             batched_num_scrbs_per_mask[i][obj_indx]+= 1
         if unique_timestamp:
@@ -303,7 +307,7 @@ def get_next_clicks_mq_argmax(targets, pred_output, timestamp, device, scribbles
                   
 # from mask2former.data.points.annotation_generator import create_circular_mask, get_max_dt_point_mask
 def _get_corrective_clicks_argmax(pred_mask, gt_mask, semantic_map, padding_mask,timestamp,
-                   unique_timestamp, device, radius=3,  max_num_points=2
+                   unique_timestamp, device, radius=3,  max_num_points=2, use_point_features=True
 ):
     gt_mask = np.asarray(gt_mask, dtype = np.bool_)
     pred_mask = np.asarray(pred_mask, dtype = np.bool_)
@@ -347,15 +351,17 @@ def _get_corrective_clicks_argmax(pred_mask, gt_mask, semantic_map, padding_mask
         obj_indices = []
         for index in indices:
             coords = sample_locations[index]
-            _pm = create_circular_mask(H, W, centers=[coords], radius=3)
-            point_masks.append(_pm)
+            if not use_point_features:
+                _pm = create_circular_mask(H, W, centers=[coords], radius=3)
+                point_masks.append(_pm)
             points_coords.append([coords[0], coords[1],timestamp])
             obj_indx = semantic_map[coords[0]][coords[1]] -1
             obj_indices.append(obj_indx)
             if unique_timestamp:
                 timestamp+=1
             # points_coords.append(coords)
-        point_masks = torch.from_numpy(np.stack(point_masks, axis=0)).to(device=device, dtype=torch.uint8)
+        if not use_point_features:
+            point_masks = torch.from_numpy(np.stack(point_masks, axis=0)).to(device=device, dtype=torch.uint8)
         return (points_coords, point_masks, obj_indices)
     else:
         None

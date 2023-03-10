@@ -9,6 +9,7 @@ from . import (
     register_mapillary_vistas_panoptic,
     register_coco_lvis,
     register_berkeley,
+    register_coco_mval_multi_insts,
     register_grabcut,
     register_davis585,
     register_davis17,

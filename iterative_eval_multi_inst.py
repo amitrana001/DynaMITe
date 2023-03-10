@@ -240,7 +240,7 @@ class Trainer(DefaultTrainer):
             )
 
         results = OrderedDict()
-        from mask2former.evaluation.multi_instance_evaluation_per_obj_coordsV1 import evaluate
+        from mask2former.evaluation.multi_instance_evaluation_per_obj_coordsV4 import evaluate
         max_interactions =10
         for idx, dataset_name in enumerate(cfg.DATASETS.TEST):
             model_name = cfg.MODEL.WEIGHTS.split("/")[-2]

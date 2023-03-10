@@ -30,8 +30,8 @@ def add_maskformer2_config(cfg):
     # optimizer
     cfg.SOLVER.OPTIMIZER = "ADAMW"
     cfg.SOLVER.BACKBONE_MULTIPLIER = 0.1
-    cfg.SOLVER.NUM_DECAYS =  3
-    cfg.SOLVER.RESCALE_INTERVAL = False
+    # cfg.SOLVER.NUM_DECAYS =  3
+    # cfg.SOLVER.RESCALE_INTERVAL = False
 
     # mask_former model config
     cfg.MODEL.MASK_FORMER = CN()

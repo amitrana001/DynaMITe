@@ -412,7 +412,7 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
             self.register_parameter("static_bg_query", nn.Parameter(torch.zeros(self.num_static_bg_queries,hidden_dim), True))
             self.register_parameter("bg_query", nn.Parameter(torch.zeros(hidden_dim), False))
         else:
-            self.register_parameter("bg_query", nn.Parameter(torch.zeros(hidden_dim), True))
+            self.register_parameter("bg_query", nn.Parameter(torch.zeros(hidden_dim), False))
 
         # level embedding (we always use 3 scales)
         self.num_feature_levels = 3
@@ -495,7 +495,7 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
 
     def forward(self, data, targets, images, num_instances, x, mask_features, mask = None, scribbles =None,
                  prev_mask_logits=None, batched_num_scrbs_per_mask=None,
-                 batched_fg_coords_list = None, batched_bg_coords_list = None):
+                 batched_fg_coords_list = None, batched_bg_coords_list = None, batched_max_timestamp=None):
         # x is a list of multi-scale feature
         assert len(x) == self.num_feature_levels
         
@@ -538,7 +538,7 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
                 for i in range(num_iters):
                     prev_output = self.iterative_batch_forward(x, src, pos, size_list, images, mask_features, scribbles, prev_mask_logits,
                                                                batched_num_scrbs_per_mask, batched_fg_coords_list, 
-                                                               batched_bg_coords_list
+                                                               batched_bg_coords_list, batched_max_timestamp
                     )
                     prev_mask_logits = prev_output['pred_masks']
                     # print("before:",batched_num_scrbs_per_mask)
@@ -551,7 +551,7 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
                             next_coords_info = get_next_clicks_mq_argmax(data, processed_results,i+1, src[0].device,
                                                               scribbles, batched_num_scrbs_per_mask,batched_fg_coords_list, batched_bg_coords_list,
                                                               per_obj_sampling=self.per_obj_sampling, unique_timestamp=self.unique_timestamp,
-                                                              batched_max_timestamp = batched_max_timestamp)
+                                                              batched_max_timestamp = batched_max_timestamp, use_point_features=self.use_point_features)
                         else:
                             next_coords_info = get_next_clicks_mq(data, processed_results,i+1, src[0].device,
                                                                 scribbles, batched_num_scrbs_per_mask,batched_fg_coords_list, batched_bg_coords_list,
@@ -572,11 +572,12 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
                     # print("after:",batched_num_scrbs_per_mask)
             outputs = self.iterative_batch_forward(x, src, pos, size_list, images, mask_features, scribbles,  prev_mask_logits,
                                                     batched_num_scrbs_per_mask, batched_fg_coords_list, 
-                                                    batched_bg_coords_list
+                                                    batched_bg_coords_list, batched_max_timestamp
                     )
         else:
             outputs = self.iterative_batch_forward(x, src, pos, size_list, images, mask_features, scribbles, prev_mask_logits,
-                                                   batched_num_scrbs_per_mask, batched_fg_coords_list, batched_bg_coords_list)
+                                                   batched_num_scrbs_per_mask, batched_fg_coords_list, batched_bg_coords_list,
+                                                   batched_max_timestamp)
         return outputs, batched_num_scrbs_per_mask
 
     def forward_prediction_heads(self, output, mask_features, attn_mask_target_size):
@@ -608,20 +609,23 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
 
     def iterative_batch_forward(self, x, src, pos, size_list, images, mask_features, scribbles =None,
                                 prev_mask_logits=None, batched_num_scrbs_per_mask=None,
-                                batched_fg_coords_list=None, batched_bg_coords_list=None):
+                                batched_fg_coords_list=None, batched_bg_coords_list=None, batched_max_timestamp=None):
 
         _, bs, _ = src[0].shape
         B, C, H, W = mask_features.shape
         height = 4*H
         width = 4*W
         
-        if scribbles is not None:
+        #if scribbles is not None:
+        if not self.use_point_features:
             new_scribbles = []
             for scrbs in scribbles:
                 if scrbs[-1] is not None:
                     new_scribbles.append(torch.cat(scrbs))
                 else:
                     new_scribbles.append(torch.cat(scrbs[:-1]))
+        else:
+            new_scribbles = None
         # max_scrbs_batch = max([scrbs.shape[0] for scrbs in new_scribbles])
 
         # _,height,width = new_scribbles[0].shape
@@ -640,9 +644,10 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
         query_embed = repeat(self.query_embed, "C -> Q N C", N=bs, Q=output.shape[1])
         if self.use_pos_coords:
             scrbs_coords = self.get_pos_tensor_coords(batched_fg_coords_list, batched_bg_coords_list,
-                                                    output.shape[1], height, width, output.device
+                                                    output.shape[1], height, width, output.device, batched_max_timestamp=batched_max_timestamp
                             ) # bsxQx3
-            pos_coord_embed = self.gen_sineembed_for_position(scrbs_coords.permute(1,0,2), use_timestamp=self.use_time_coords) # Q x bs x C
+            pos_coord_embed = self.gen_sineembed_for_position(scrbs_coords.permute(1,0,2), use_timestamp=self.use_time_coords,
+                                                                batched_max_timestamp=batched_max_timestamp) # Q x bs x C
             pos_coord_embed = self.ca_qpos_sine_proj(pos_coord_embed.to(query_embed.dtype))
             
             query_embed = query_embed + pos_coord_embed
@@ -743,7 +748,7 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
         else:
             return [{"pred_masks": b} for b in outputs_seg_masks[:-1]]
     
-    def gen_sineembed_for_position(self, pos_tensor, use_timestamp = False):
+    def gen_sineembed_for_position(self, pos_tensor, use_timestamp = False, batched_max_timestamp=None):
         # n_query, bs, 3 = pos_tensor.size()
         # sineembed_tensor = torch.zeros(n_query, bs, 256)
         import math
@@ -772,7 +777,7 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
         pos = torch.cat((pos_y, pos_x), dim=2)
         return pos
     
-    def get_pos_tensor_coords(self, batched_fg_coords_list, batched_bg_coords_list, num_queries, height, width, device):
+    def get_pos_tensor_coords(self, batched_fg_coords_list, batched_bg_coords_list, num_queries, height, width, device, batched_max_timestamp=None):
 
         #batched_fg_coords_list: batch x (list of list of fg coords) [y,x,t]
 
@@ -784,12 +789,21 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
         
         for i, fg_coords_per_image in enumerate(batched_fg_coords_list):
             coords_per_image  = []
+            if batched_max_timestamp is not None:
+                t = max(batched_max_timestamp[i],500)
             for fg_coords_per_mask in fg_coords_per_image:
                 for coords in fg_coords_per_mask:
-                    coords_per_image.append([coords[0]/height, coords[1]/width, coords[2]])
+                    if batched_max_timestamp is not None:
+                        coords_per_image.append([coords[0]/height, coords[1]/width, coords[2]/t])
+                    else:
+                        coords_per_image.append([coords[0]/height, coords[1]/width, coords[2]])
             if batched_bg_coords_list[i] is not None:
                 for coords in batched_bg_coords_list[i]:
-                    coords_per_image.append([coords[0]/height, coords[1]/width, coords[2]])
+                    if batched_max_timestamp is not None:
+                        coords_per_image.append([coords[0]/height, coords[1]/width, coords[2]/t])
+                    else:
+                        coords_per_image.append([coords[0]/height, coords[1]/width, coords[2]])
+                    # coords_per_image.append([coords[0]/height, coords[1]/width, coords[2]])
             coords_per_image.extend([[-1.0,-1.0,-1.0]] * (num_queries-len(coords_per_image)))
             pos_tensor.append(torch.tensor(coords_per_image,device=device))
         # pos_tensor = torch.tensor(pos_tensor,device=device)

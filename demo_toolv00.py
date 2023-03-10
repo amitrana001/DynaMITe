@@ -9,7 +9,7 @@ import cv2
 import os
 from detectron2.data import transforms as T
 from detectron2.projects.deeplab import add_deeplab_config
-from mask2former.config import add_maskformer2_config
+from mask2former.config import add_maskformer2_config, add_hrnet_config
 from detectron2.config import get_cfg
 
 from interactive_demo_tool.app import InteractiveDemoApp
@@ -22,6 +22,7 @@ def main():
     # # cfg = get_cfg()
     add_deeplab_config(cfg)
     add_maskformer2_config(cfg)
+    add_hrnet_config(cfg)
     # cfg.merge_from_file("interactive_output/config.yaml")
     cfg.merge_from_file(args.config_file)
 
@@ -35,6 +36,10 @@ def main():
     # torch.backends.cudnn.deterministic = True
     # checkpoint_path = utils.find_checkpoint(cfg.INTERACTIVE_MODELS_PATH, args.checkpoint)
     # model = utils.load_is_model(checkpoint_path, args.device, cpu_dist_maps=True)
+    # import debugpy
+    # debugpy.listen(5678)
+    # print("Waiting for debugger")
+    # debugpy.wait_for_client()
 
     root = tk.Tk()
     root.minsize(960, 480)

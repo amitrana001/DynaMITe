@@ -22,7 +22,7 @@ INPUT:
 if __name__ == "__main__":
     input = sys.argv[1]
 
-    obj = torch.load(input, map_location="cpu")["model"]
+    obj = torch.load(input, map_location="cpu")#["model"]
     #source_weights = torch.load(args.source_model)
     #converted_weights = {}
     #keys = list(obj.keys())

@@ -162,7 +162,7 @@ def evaluate(
                 indexes = torch.topk(torch.tensor(ious), k = len(ious),largest=False).indices
                 point_sampled = False
                 for i in indexes:
-                    if ious[i]<iou_threshold and num_clicks_per_object[i] != max_interactions:
+                    if ious[i]<iou_threshold and num_clicks_per_object[i] < max_interactions:
                         # total_num_interactions+=1
                         (scrbs, is_fg, obj_index, not_clicked_map, coords,
                         fg_click_map, bg_click_map) = get_next_click(pred_masks[i], gt_masks[i], semantic_map, not_clicked_map, fg_click_map,
@@ -177,7 +177,7 @@ def evaluate(
                             else:
                                 scribbles[0][-1] = scrbs
                                 batched_bg_coords_list[0] = [[coords[0], coords[1],num_interactions]]
-                            num_clicks_per_object[-1]+=1
+                            num_clicks_per_object[i]+=1
                             point_sampled = True
                             index_clicked[-1] = True
                         else:
@@ -189,6 +189,37 @@ def evaluate(
                             index_clicked[obj_index] = True
                         point_sampled = True
                         break
+                if not point_sampled:
+                    indexes = torch.topk(torch.tensor(ious), k = len(ious),largest=True).indices
+
+                    # total_dious = current_dious + prev_dious
+                    for i in indexes:
+                        if ious[i]<iou_threshold:
+                            (scrbs, is_fg, obj_index, not_clicked_map, coords,
+                            fg_click_map, bg_click_map) = get_next_click(pred_masks[i], gt_masks[i], semantic_map, not_clicked_map, fg_click_map,
+                                                                        bg_click_map, orig_device, radius, sampling_strategy, padding=True,
+                                                                        )
+                            total_num_interactions+=1
+                            scrbs = prepare_scribbles(scrbs,images)
+                            if obj_index == -1:
+                                if batched_bg_coords_list[0]:
+                                    scribbles[0][-1] = torch.cat((scribbles[0][-1],scrbs))
+                                    batched_bg_coords_list[0].extend([[coords[0], coords[1],num_interactions]])
+                                else:
+                                    scribbles[0][-1] = scrbs
+                                    batched_bg_coords_list[0] = [[coords[0], coords[1],num_interactions]]
+                                num_clicks_per_object[i]+=1
+                                point_sampled = True
+                                index_clicked[-1] = True
+                            else:
+                                scribbles[0][obj_index] = torch.cat([scribbles[0][obj_index], scrbs], 0)
+                                batched_num_scrbs_per_mask[0][obj_index] += 1
+                                batched_fg_coords_list[0][obj_index].extend([[coords[0], coords[1],num_interactions]])
+                            
+                                num_clicks_per_object[i]+=1
+                                index_clicked[obj_index] = True
+                            point_sampled = True
+                            break 
                 if point_sampled:
                     num_interactions+=1
                     clicked_objects_per_interaction[f"{inputs[0]['image_id']}_{idx}"].append(index_clicked)

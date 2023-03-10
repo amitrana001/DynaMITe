@@ -4,7 +4,7 @@ MODEL:
     NAME: "segformer"
     FREEZE_AT: 0
   MIT_BACKBONE:
-    NAME: "b0"
+    NAME: "b3"
   WEIGHTS: "weights/segformer/mit_b3_trans.pth"
   PIXEL_MEAN: [123.675, 116.280, 103.530]
   PIXEL_STD: [58.395, 57.120, 57.375]

@@ -6,7 +6,7 @@ import numpy as np
 from PIL import Image
 
 from interactive_demo_tool.canvas import CanvasImage
-from interactive_demo_tool.controller_mq import InteractiveController
+from interactive_demo_tool.controller_mq_coords import InteractiveController
 from interactive_demo_tool.wrappers import BoundedNumericalEntry, FocusHorizontalScale, FocusCheckButton, \
     FocusButton, FocusLabelFrame
 from detectron2.utils.colormap import colormap
@@ -146,7 +146,7 @@ class InteractiveDemoApp(ttk.Frame):
 
         self.click_radius_frame = FocusLabelFrame(master, text="Visualisation click radius")
         self.click_radius_frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=3)
-        FocusHorizontalScale(self.click_radius_frame, from_=0, to=7, resolution=1, command=self._update_click_radius,
+        FocusHorizontalScale(self.click_radius_frame, from_=0, to=10, resolution=1, command=self._update_click_radius,
                              variable=self.state['click_radius']).pack(padx=10, anchor=tk.CENTER)
 
     def _load_image_callback(self):

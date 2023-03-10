@@ -162,10 +162,10 @@ def evaluate(
                 indexes = torch.topk(torch.tensor(ious), k = len(ious),largest=False).indices
                 point_sampled = False
                 for i in indexes:
-                    if ious[i]<iou_threshold and num_clicks_per_object[i] != max_interactions:
+                    if ious[i]<iou_threshold and num_clicks_per_object[i] < max_interactions:
                         # total_num_interactions+=1
                         (scrbs, is_fg, obj_index, not_clicked_map, coords,
-                        fg_click_map, bg_click_map) = get_next_clickV1(pred_masks[i], gt_masks[i], semantic_map, not_clicked_map, fg_click_map,
+                        fg_click_map, bg_click_map) = get_next_click(pred_masks[i], gt_masks[i], semantic_map, not_clicked_map, fg_click_map,
                                                                     bg_click_map, orig_device, radius, sampling_strategy, padding=True,
                                                                     )
                         total_num_interactions+=1

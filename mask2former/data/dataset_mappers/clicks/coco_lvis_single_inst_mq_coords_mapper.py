@@ -88,6 +88,7 @@ class COCOLVISSingleInstMQCoordsDatasetMapper:
         self.img_format = image_format
         self.is_train = is_train
         self.min_area = 1000.0
+        self.merge_objects_prob=0.15
         self.random_bg_queries = random_bg_queries
         self.unique_timestamp = unique_timestamp
     
@@ -212,10 +213,14 @@ class COCOLVISSingleInstMQCoordsDatasetMapper:
                 # else:
                 #     #Take 75% masks as the foreground masks
                 #     num_masks = min(int(gt_masks.shape[0]*(0.70)), 30)
-
-                num_masks = 1
+                if np.random.rand() < self.merge_objects_prob:
+                    num_masks = 2
+                else:
+                    num_masks = 1
+                num_masks =min(gt_masks.shape[0], num_masks)
                 random_indices = random.sample(range(gt_masks.shape[0]),num_masks)
                 new_gt_masks = gt_masks[random_indices]
+                new_gt_masks = torch.max(new_gt_masks,dim=0).values.unsqueeze(0)
                 # new_gt_classes = instances.gt_classes[random_indices]
 
                 new_gt_classes = [0]*new_gt_masks.shape[0]

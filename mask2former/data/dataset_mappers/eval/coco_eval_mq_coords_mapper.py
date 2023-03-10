@@ -142,6 +142,8 @@ class COCOEvalMQCoordsMapper:
                 gt_masks = instances.gt_masks
                 gt_masks = convert_coco_poly_to_mask(gt_masks.polygons, h, w)
 
+                if gt_masks.shape[0] == 0:
+                    return None
                 # Make smaller object in front in case of overlapping masks
                 
                 mask_areas = torch.sum(gt_masks, (1,2))

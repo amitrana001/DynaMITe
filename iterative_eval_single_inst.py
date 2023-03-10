@@ -5,7 +5,7 @@ MaskFormer Training Script.
 This script is a simplified version of the training script in detectron2/tools.
 """
 import csv
-
+from detectron2.config import CfgNode as CN
 import numpy as np
 
 try:
@@ -242,7 +242,7 @@ class Trainer(DefaultTrainer):
         results = OrderedDict()
         from mask2former.evaluation.single_instance_evaluation_coords import get_avg_noc
         for dataset_name in ["GrabCut", "Berkeley",  "davis_single_inst", "coco_Mval", 'sbd_single_inst',"davis585"]:
-
+        # for dataset_name in ["davis_single_inst"]:
             data_loader = cls.build_test_loader(cfg, dataset_name)
             
             evaluator =None
@@ -251,7 +251,7 @@ class Trainer(DefaultTrainer):
             iou_threshold = [0.90]
             
             for iou in iou_threshold:
-                for s in range(0,2):
+                for s in range(1,2):
                     # model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + f"_S{s}"
                     model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + cfg.MODEL.WEIGHTS.split("/")[-1][5:-4] + f"_S{s}"
                     if cfg.ITERATIVE.TRAIN.USE_ARGMAX:
@@ -301,6 +301,8 @@ def setup(args):
     """
     cfg = get_cfg()
     # for poly lr schedule
+    cfg.EVALUATION_STRATEGY = CN()
+    cfg.EVALUATION_STRATEGY.TYPE = None
     add_deeplab_config(cfg)
     add_maskformer2_config(cfg)
     add_hrnet_config(cfg)
@@ -310,6 +312,8 @@ def setup(args):
     #     cfg.SEED = 46699430
     # cfg.OUTPUT_DIR = "./all_data/new_models/class_agnostic"
     cfg.ITERATIVE.TRAIN.USE_ARGMAX = True
+    # cfg.EVALUATION_STRATEGY = CN()
+    cfg.EVALUATION_STRATEGY.TYPE = None
     cfg.freeze()
     default_setup(cfg, args)
     # Setup logger for "mask_former" module

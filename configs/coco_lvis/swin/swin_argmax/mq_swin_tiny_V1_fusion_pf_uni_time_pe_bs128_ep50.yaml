@@ -1,0 +1,38 @@
+_BASE_: ../swin-base.yaml
+MODEL:
+  BACKBONE:
+    NAME: "D2SwinTransformer"
+  SWIN:
+    EMBED_DIM: 96
+    DEPTHS: [2, 2, 6, 2]
+    NUM_HEADS: [3, 6, 12, 24]
+    WINDOW_SIZE: 7
+    APE: False
+    DROP_PATH_RATE: 0.3
+    PATCH_NORM: True
+  WEIGHTS: "weights/swin_tiny_patch4_window7_224.pkl"
+  PIXEL_MEAN: [123.675, 116.280, 103.530]
+  PIXEL_STD: [58.395, 57.120, 57.375]
+  SEM_SEG_HEAD:
+    REFINE_MASK_FEATURES: True
+ITERATIVE:
+  TRAIN:
+    #PER_OBJ_SAMPLING: True
+    USE_POS_COORDS: True
+    USE_TIME_COORDS: True
+    USE_POINT_FEATURES: True
+    USE_COORDS_ON_POINT_MASKS: False
+    UNIQUE_TIMESTAMP: True
+    USE_ARGMAX: True
+INPUT:
+  IMAGE_SIZE: 1024
+SOLVER:
+  IMS_PER_BATCH: 128
+  BASE_LR: 0.0005 #5e-4
+  STEPS: (41000, 44400) #(81945, 88773) #(163889, 177546) #(327778, 355092)
+  MAX_ITER: 46500 #92188 #184375 #368750
+DATASETS:
+  TRAIN: ("coco_lvis_2017_train",)
+INPUT:
+  DATASET_MAPPER_NAME: "coco_lvis_multi_insts_stuff_coords_mq"
+VERSION: 2

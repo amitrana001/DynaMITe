@@ -11,7 +11,7 @@ from detectron2.utils.colormap import colormap
 from detectron2.utils.comm import get_world_size
 from detectron2.utils.logger import log_every_n_seconds
 from torch import nn
-
+from mask2former.evaluation.zoom_in import zoomIn
 from mask2former.data.points.annotation_generator import get_next_click
 from mask2former.evaluation.eval_utils import compute_iou, get_next_click, prepare_scribbles
 
@@ -98,6 +98,7 @@ def get_avg_noc(
             num_instances, h_t, w_t = gt_masks.shape[:]
             total_num_instances+=num_instances
             
+            zoom = zoomIn(cfg, gt_masks, inputs, model, expansion_ratio=1.4)
             ignore_masks = None
             if 'ignore_mask' in inputs[0]:
                 ignore_masks = inputs[0]['ignore_mask'].to(device='cpu', dtype = torch.uint8)
@@ -109,12 +110,13 @@ def get_avg_noc(
             num_interactions = 1
             ious = [0.0]*num_instances
             radius = 8
-            
+            batched_max_timestamp= [1]
+                   
             (processed_results, outputs, images, scribbles,
             num_insts, features, mask_features,
             transformer_encoder_features, multi_scale_features,
             batched_num_scrbs_per_mask,batched_fg_coords_list,
-            batched_bg_coords_list) = model(inputs)
+            batched_bg_coords_list) = model(inputs,batched_max_timestamp=batched_max_timestamp)
             orig_device = images.tensor.device
 
             # save_visualization(inputs[0], gt_masks, scribbles[0], save_vis_path,  ious[0], num_interactions-1,  alpha_blend=0.6)
@@ -141,6 +143,7 @@ def get_avg_noc(
 
                         # pt_sampled_dict[inputs[0]['image_id']].append(coords)
                         total_num_interactions+=1
+                        batched_max_timestamp[0]+=1
                         scrbs = prepare_scribbles(scrbs,images)
                         if is_fg:
                             scribbles[0][i] = torch.cat([scribbles[0][i], scrbs], 0)
@@ -165,10 +168,19 @@ def get_avg_noc(
                                                features, mask_features, transformer_encoder_features,
                                                multi_scale_features, prev_mask_logits,
                                                batched_num_scrbs_per_mask,
-                                               batched_fg_coords_list, batched_bg_coords_list)
+                                               batched_fg_coords_list, batched_bg_coords_list,
+                                               batched_max_timestamp = batched_max_timestamp)
                 
                 pred_masks = processed_results[0]['instances'].pred_masks.to('cpu',dtype=torch.uint8)
                 pred_masks = torchvision.transforms.Resize(size = (h_t,w_t))(pred_masks)
+
+                pred_masks, object_roi = zoom.apply_zoom(coords,inputs, pred_masks, images, scribbles, num_insts,
+                                                        features, mask_features, transformer_encoder_features,
+                                                        multi_scale_features, prev_mask_logits,
+                                                        batched_num_scrbs_per_mask,
+                                                        batched_fg_coords_list, batched_bg_coords_list,
+                                                        batched_max_timestamp = batched_max_timestamp)
+                
                 
                 ious = compute_iou(gt_masks,pred_masks,ious,iou_threshold,ignore_masks)
                 per_image_iou_list.append(ious[0].item())

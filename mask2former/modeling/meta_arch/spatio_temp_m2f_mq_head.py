@@ -119,16 +119,16 @@ class SpatioTempM2FHeadMQ(nn.Module):
     def forward(self, data, targets, images, features, num_instances, mask=None, scribbles=None,
                 mask_features=None, transformer_encoder_features=None, 
                 multi_scale_features=None, prev_mask_logits=None, batched_num_scrbs_per_mask=None,
-                batched_fg_coords_list = None, batched_bg_coords_list = None):
+                batched_fg_coords_list = None, batched_bg_coords_list = None, batched_max_timestamp=None):
         
         return self.layers(data, targets, images, features, num_instances, mask, scribbles, mask_features,
                 transformer_encoder_features, multi_scale_features, prev_mask_logits,
-                batched_num_scrbs_per_mask, batched_fg_coords_list, batched_bg_coords_list)
+                batched_num_scrbs_per_mask, batched_fg_coords_list, batched_bg_coords_list,  batched_max_timestamp)
 
     def layers(self, data, targets, images, features, num_instances, mask=None, scribbles=None,
                mask_features=None, transformer_encoder_features=None, 
                multi_scale_features=None, prev_mask_logits=None,batched_num_scrbs_per_mask=None,
-               batched_fg_coords_list = None, batched_bg_coords_list = None):
+               batched_fg_coords_list = None, batched_bg_coords_list = None,  batched_max_timestamp=None):
         
         if (mask_features is None) or (multi_scale_features is None):
             mask_features, transformer_encoder_features, multi_scale_features = self.pixel_decoder.forward_features(features)
@@ -138,7 +138,7 @@ class SpatioTempM2FHeadMQ(nn.Module):
             # predictions = self.predictor(multi_scale_features, mask_features, mask, scribbles = scribbles)
             predictions, batched_num_scrbs_per_mask = self.predictor(data, targets, images, num_instances, multi_scale_features,
                                         mask_features, mask, scribbles, prev_mask_logits, batched_num_scrbs_per_mask,
-                                        batched_fg_coords_list, batched_bg_coords_list)
+                                        batched_fg_coords_list, batched_bg_coords_list,batched_max_timestamp)
         else:
             if self.transformer_in_feature == "transformer_encoder":
                 assert (

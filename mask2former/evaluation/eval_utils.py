@@ -345,7 +345,7 @@ def prepare_scribbles(scribbles,images):
     return padded_scribbles
 
 
-def log_single_instance(res, max_interactions, dataset_name, model_name):
+def log_single_instance(res, max_interactions, dataset_name, model_name, ablation=False):
     logger = logging.getLogger(__name__)
     total_num_instances = sum(res['total_num_instances'])
     total_num_interactions = sum(res['total_num_interactions'])
@@ -377,8 +377,13 @@ def log_single_instance(res, max_interactions, dataset_name, model_name):
            total_num_instances,
            max_interactions]
 
-    save_stats_path = os.path.join("./output/evaluation/final_eval", f'{dataset_name}.txt')
-    os.makedirs("./output/evaluation/final_eval", exist_ok=True)
+    if ablation:
+        save_stats_path = os.path.join("./output/evaluation/ablation", f'{dataset_name}.txt')
+        os.makedirs("./output/evaluation/ablation", exist_ok=True)
+    else:
+        save_stats_path = os.path.join("./output/evaluation/final", f'{dataset_name}.txt')
+        os.makedirs("./output/evaluation/final", exist_ok=True)
+
     if not os.path.exists(save_stats_path):
         header = ["model",
                   "NOC_80", "NOC_85", "NOC_90", "NFO_80","NFO_85","NFO_90","IOU_80","IOU_85", "IOU_90",
@@ -402,51 +407,56 @@ def log_single_instance(res, max_interactions, dataset_name, model_name):
     print(table)
 
 
-def log_multi_instance(res, max_interactions, dataset_name, model_name, iou_threshold=0.85, save_stats_summary=True,
-                       per_obj = True, sampling_strategy = 0):
+def log_multi_instance(res, max_interactions, dataset_name, model_name, ablation=False,iou_threshold=0.85,
+                        save_stats_summary=True, per_obj = False, sampling_strategy = 0):
     logger = logging.getLogger(__name__)
     total_num_instances = sum(res['total_num_instances'])
     total_num_interactions = sum(res['total_num_interactions'])
-    num_failed_objects = sum(res['num_failed_objects'])
-    total_iou = sum(res['total_iou'])
+    # num_failed_objects = sum(res['num_failed_objects'])
+    # total_iou = sum(res['total_iou'])
 
     logger.info(
         "Total number of instances: {}, Average num of interactions:{}".format(
             total_num_instances, total_num_interactions / total_num_instances
         )
     )
-    logger.info(
-        "Total number of failed cases: {}, Avg IOU: {}".format(
-            num_failed_objects, total_iou / total_num_instances
-        )
-    )
+    # logger.info(
+    #     "Total number of failed cases: {}, Avg IOU: {}".format(
+    #         num_failed_objects, total_iou / total_num_instances
+    #     )
+    # )
 
     # header = ['Model Name', 'IOU_thres', 'Avg_NOC', 'NOF', "Avg_IOU", "max_num_iters", "num_inst"]
-    NOC = np.round(total_num_interactions / total_num_instances, 2)
-    NCI = sum(res['avg_num_clicks_per_images']) / len(res['avg_num_clicks_per_images'])
-    NFI = len(res['failed_images_ids'])
-    Avg_IOU = np.round(total_iou / total_num_instances, 4)
-    row = [model_name, NCI, NFI, NOC, num_failed_objects, Avg_IOU, iou_threshold, max_interactions, total_num_instances]
+    # NOC = np.round(total_num_interactions / total_num_instances, 2)
+    # NCI = sum(res['avg_num_clicks_per_images']) / len(res['avg_num_clicks_per_images'])
+    # NFI = len(res['failed_images_ids'])
+    # Avg_IOU = np.round(total_iou / total_num_instances, 4)
+    # # row = [model_name, NCI, NFI, NOC, num_failed_objects, Avg_IOU, iou_threshold, max_interactions, total_num_instances]
 
-    table = PrettyTable()
-    table.field_names = ["dataset", "NCI", "NFI", "NOC", "NFO", "Avg_IOU", "max_interactions", "#samples"]
-    table.add_row(
-        [dataset_name, NCI, NFI, NOC, num_failed_objects, Avg_IOU, max_interactions, total_num_instances])
+    # table = PrettyTable()
+    # table.field_names = ["dataset", "NCI", "NFI", "NOC", "NFO", "Avg_IOU", "max_interactions", "#samples"]
+    # table.add_row(
+    #     [dataset_name, NCI, NFI, NOC, num_failed_objects, Avg_IOU, max_interactions, total_num_instances])
 
-    print(table)
-    # save_stats_path = os.path.join("./output/evaluation", f'{dataset_name}.txt')
-    save_stats_path = os.path.join("./output/evaluation",  f'{dataset_name}.txt')
-    if not os.path.exists(save_stats_path):
-        # print("No File")
-        header = ['Model Name', 'NCI', 'NFI','NOC', 'NFO', "Avg_IOU", 'IOU_thres',"max_num_iters", "num_inst"]
-        with open(save_stats_path, 'w') as f:
-            writer = csv.writer(f, delimiter= "\t")
-            writer.writerow(header)
-            # writer.writerow(row)
+    # print(table)
+    # # save_stats_path = os.path.join("./output/evaluation", f'{dataset_name}.txt')
+    # if ablation:
+    #     save_stats_path = os.path.join("./output/evaluation/ablation",  f'{dataset_name}.txt')
+    #     os.makedirs("./output/evaluation/ablation", exist_ok=True)
+    # else:
+    #     save_stats_path = os.path.join("./output/evaluation/final", f'{dataset_name}.txt')
+    #     os.makedirs("./output/evaluation/final", exist_ok=True)
+    # if not os.path.exists(save_stats_path):
+    #     # print("No File")
+    #     header = ['Model Name', 'NCI', 'NFI','NOC', 'NFO', "Avg_IOU", 'IOU_thres',"max_num_iters", "num_inst"]
+    #     with open(save_stats_path, 'w') as f:
+    #         writer = csv.writer(f, delimiter= "\t")
+    #         writer.writerow(header)
+    #         # writer.writerow(row)
 
-    with open(save_stats_path, 'a') as f:
-        writer = csv.writer(f, delimiter= "\t")
-        writer.writerow(row)
+    # with open(save_stats_path, 'a') as f:
+    #     writer = csv.writer(f, delimiter= "\t")
+    #     writer.writerow(row)
 
     if save_stats_summary:
         summary_stats = {}
@@ -454,14 +464,14 @@ def log_multi_instance(res, max_interactions, dataset_name, model_name, iou_thre
         summary_stats["dataset"] = dataset_name
         summary_stats["model"] = model_name
         summary_stats["iou_threshold"] = iou_threshold
-        summary_stats["failed_images_counts"] = NFI
-        summary_stats["avg_over_total_images"] = NCI
-        summary_stats["Avg_NOC"] = NOC
-        summary_stats["Avg_IOU"] = np.round(total_iou / total_num_instances, 4)
-        summary_stats["num_failed_objects"] = num_failed_objects
-        summary_stats["failed_images_ids"] = res['failed_images_ids']
-        summary_stats["failed_objects_areas"] = res['failed_objects_areas']
-        summary_stats["avg_num_clicks_per_images"] = np.mean(res['avg_num_clicks_per_images'])
+        # summary_stats["failed_images_counts"] = NFI
+        # summary_stats["avg_over_total_images"] = NCI
+        # summary_stats["Avg_NOC"] = NOC
+        # summary_stats["Avg_IOU"] = np.round(total_iou / total_num_instances, 4)
+        # summary_stats["num_failed_objects"] = num_failed_objects
+        # summary_stats["failed_images_ids"] = res['failed_images_ids']
+        # summary_stats["failed_objects_areas"] = res['failed_objects_areas']
+        # summary_stats["avg_num_clicks_per_images"] = np.mean(res['avg_num_clicks_per_images'])
         summary_stats["total_computer_time"] = res['total_compute_time_str']
         summary_stats["time_per_intreaction_tranformer_decoder"] = np.mean(
             res['time_per_intreaction_tranformer_decoder']
@@ -477,21 +487,34 @@ def log_multi_instance(res, max_interactions, dataset_name, model_name, iou_thre
         for _d in res['clicked_objects_per_interaction']:
             clicked_objects_per_interaction.update(_d)
         
-        num_instances_per_image = {}
-        for _d in res['num_instances_per_image']:
-            num_instances_per_image.update(_d)
+        object_areas_per_image = {}
+        for _d in res['object_areas_per_image']:
+            object_areas_per_image.update(_d)
+        
+        fg_click_coords_per_image = {}
+        for _d in res['object_areas_per_image']:
+            fg_click_coords_per_image.update(_d)
+        
+        bg_click_coords_per_image = {}
+        for _d in res['object_areas_per_image']:
+            bg_click_coords_per_image.update(_d)
        
         summary_stats["clicked_objects_per_interaction"] = clicked_objects_per_interaction
         summary_stats["ious_objects_per_interaction"] = ious_objects_per_interaction
-        summary_stats['num_instances_per_image'] =  num_instances_per_image
+        summary_stats['object_areas_per_image'] =  object_areas_per_image
+        summary_stats['fg_click_coords_per_image'] =  fg_click_coords_per_image
+        summary_stats['bg_click_coords_per_image'] =  bg_click_coords_per_image
 
-        now = datetime.datetime.now()
-        # dd/mm/YY H:M:S
-        dt_string = now.strftime("%d_%m_%Y_%H_%M_%S_")
-        if per_obj:
-            model_name += "_per_obj_"
-        model_name += dt_string
-        save_summary_path = os.path.join(f"./output/evaluations/{dataset_name}")
+        # now = datetime.datetime.now()
+        # # dd/mm/YY H:M:S
+        # dt_string = now.strftime("%d_%m_%Y_%H_%M_%S_")
+        # if per_obj:
+        #     model_name += "_per_obj_"
+        # model_name += dt_string
+        if ablation:
+            save_summary_path = os.path.join(f"./output/evaluation/ablation/summary/{dataset_name}")
+        else:
+            save_summary_path = os.path.join(f"./output/evaluation/final/summary/{dataset_name}")
         os.makedirs(save_summary_path, exist_ok=True)
         stats_file = os.path.join(save_summary_path,
                                   f"{model_name}_{max_interactions}.pickle")

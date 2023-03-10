@@ -189,7 +189,7 @@ class SpatioTempMask2FormerMQ(nn.Module):
     def forward(self, batched_inputs, images=None, scribbles=None, batched_num_instances=None,
                 features=None, mask_features=None, transformer_encoder_features=None, 
                 multi_scale_features=None, prev_mask_logits=None, batched_num_scrbs_per_mask= None,
-                batched_fg_coords_list = None, batched_bg_coords_list = None):
+                batched_fg_coords_list = None, batched_bg_coords_list = None, batched_max_timestamp=None):
         """
         Args:
             batched_inputs: a list, batched outputs of :class:`DatasetMapper`.
@@ -241,7 +241,7 @@ class SpatioTempMask2FormerMQ(nn.Module):
                                                                     multi_scale_features,
                                                                     prev_mask_logits, batched_num_scrbs_per_mask,
                                                                     batched_fg_coords_list,
-                                                                    batched_bg_coords_list
+                                                                    batched_bg_coords_list,
                                                                 )
             losses = self.criterion(outputs, targets, batched_num_scrbs_per_mask)
 
@@ -261,7 +261,7 @@ class SpatioTempMask2FormerMQ(nn.Module):
              multi_scale_features, batched_num_scrbs_per_mask) = self.sem_seg_head(batched_inputs, gt_instances, images, features, batched_num_instances,
                                                                                     None, scribbles, mask_features, transformer_encoder_features, 
                                                                                     multi_scale_features, prev_mask_logits, batched_num_scrbs_per_mask,
-                                                                                    batched_fg_coords_list, batched_bg_coords_list)
+                                                                                    batched_fg_coords_list, batched_bg_coords_list, batched_max_timestamp)
             processed_results = self.process_results(batched_inputs, images, outputs, batched_num_instances, batched_num_scrbs_per_mask)
             if self.iterative_evaluation:
                 return (processed_results, outputs, images, scribbles, batched_num_instances, features, mask_features,

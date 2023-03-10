@@ -70,8 +70,8 @@ def get_statistics(pickle_path, ablation = False):
         save_stats_path = os.path.join("./output/evaluation/ablation/summary",  f'{dataset_name}.txt')
         os.makedirs("./output/evaluation/ablation/summary", exist_ok=True)
     else:
-        save_stats_path = os.path.join("./output/evaluation/final/summary", f'{dataset_name}.txt')
-        os.makedirs("./output/evaluation/final/summary", exist_ok=True)
+        save_stats_path = os.path.join("./output/evaluation/final/juwels-summary", f'{dataset_name}.txt')
+        os.makedirs("./output/evaluation/final/juwels-summary", exist_ok=True)
     if not os.path.exists(save_stats_path):
         # print("No File")
         header = ['model', "NCI_all", "NCI_suc", "NFI", "NFO", "Avg_IOU", 'IOU_thres',"max_num_iters", "num_inst"]
