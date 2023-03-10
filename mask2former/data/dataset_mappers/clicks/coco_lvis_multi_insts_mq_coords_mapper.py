@@ -70,6 +70,7 @@ class COCOLVISMultiInstMQCoordsDatasetMapper:
         tfm_gens,
         image_format,
         unique_timestamp,
+        use_point_features,
         random_bg_queries=False
     ):
         """
@@ -90,6 +91,7 @@ class COCOLVISMultiInstMQCoordsDatasetMapper:
         self.min_area = 1000.0
         self.random_bg_queries = random_bg_queries
         self.unique_timestamp = unique_timestamp
+        self.use_point_features = use_point_features
     
     @classmethod
     def from_config(cls, cfg, is_train=True):
@@ -102,6 +104,7 @@ class COCOLVISMultiInstMQCoordsDatasetMapper:
             "image_format": cfg.INPUT.FORMAT,
             "random_bg_queries": cfg.ITERATIVE.TRAIN.RANDOM_BG_QUERIES,
             "unique_timestamp": cfg.ITERATIVE.TRAIN.UNIQUE_TIMESTAMP,
+            "use_point_features": cfg.ITERATIVE.TRAIN.USE_POINT_FEATURES,
         }
         return ret
 
@@ -234,7 +237,9 @@ class COCOLVISMultiInstMQCoordsDatasetMapper:
                 # new_gt_masks = new_gt_masks.unsqueeze(0)
                 # print(new_gt_masks.shape)
                 (num_scrbs_per_mask, fg_coords_list, bg_coords_list,
-                fg_point_masks, bg_point_masks) = get_clicks_coords(new_gt_masks, all_masks=all_masks, unique_timestamp = self.unique_timestamp)
+                fg_point_masks, bg_point_masks) = get_clicks_coords(new_gt_masks, all_masks=all_masks,
+                                                                    unique_timestamp = self.unique_timestamp,
+                                                                    use_point_features=self.use_point_features)
         
                 dataset_dict["fg_scrbs"] = fg_point_masks
                 dataset_dict["bg_scrbs"] = bg_point_masks
@@ -245,7 +250,8 @@ class COCOLVISMultiInstMQCoordsDatasetMapper:
                 # print(masks.tensor.dtype)
                 # visualization(dataset_dict["image"], new_instances, prev_output=None, batched_fg_coords_list=[fg_coords_list],batched_bg_coords_list=[bg_coords_list])
                 assert len(num_scrbs_per_mask) == new_instances.gt_masks.shape[0]
-                assert len(fg_point_masks) == len(num_scrbs_per_mask) 
+                if not self.use_point_features:
+                    assert len(fg_point_masks) == len(num_scrbs_per_mask) 
             else:
                 return None
 

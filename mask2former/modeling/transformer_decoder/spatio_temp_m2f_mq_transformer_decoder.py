@@ -876,7 +876,10 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
         # print(num_scrbs_per_mask_copy)
         # print(mask_pred.shape)
         temp_out = []
-        splited_masks = torch.split(mask_pred, num_scrbs_per_mask_copy, dim=0)
+        if num_scrbs_per_mask_copy[-1] == 0:
+            splited_masks = torch.split(mask_pred, num_scrbs_per_mask_copy[:-1], dim=0)
+        else:
+            splited_masks = torch.split(mask_pred, num_scrbs_per_mask_copy, dim=0)
         for m in splited_masks:
             temp_out.append(torch.max(m, dim=0).values)
         # mask_pred = torch.cat([torch.stack(temp_out),splited_masks[-1]])

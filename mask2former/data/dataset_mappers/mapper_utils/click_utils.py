@@ -30,7 +30,8 @@ def generate_probs(max_num_points, gamma):
 
     return probs
 
-def get_clicks_coords(masks, max_num_points=6, radius_size=8, first_click_center=True, all_masks=None, t= 0, unique_timestamp=False):
+def get_clicks_coords(masks, max_num_points=6, radius_size=8, first_click_center=True, all_masks=None, t= 0, unique_timestamp=False,
+    use_point_features = True):
 
     """
     :param masks: numpy array of shape I x H x W
@@ -52,8 +53,9 @@ def get_clicks_coords(masks, max_num_points=6, radius_size=8, first_click_center
         if first_click_center:
             center_coords = _point_candidates_dt(_m)
             # center_coords.append(t)
-            _pm = create_circular_mask(H, W, centers=[center_coords], radius=radius_size)
-            point_masks_per_obj.append(_pm)
+            if not use_point_features:
+                _pm = create_circular_mask(H, W, centers=[center_coords], radius=radius_size)
+                point_masks_per_obj.append(_pm)
             coords.append([center_coords[0], center_coords[1], t])
             if unique_timestamp:
                 t+=1
@@ -69,15 +71,17 @@ def get_clicks_coords(masks, max_num_points=6, radius_size=8, first_click_center
         indices = random.sample(range(sample_locations.shape[0]), num_points)
         for index in indices:
             point_coords = sample_locations[index]
-            _pm = create_circular_mask(H, W, centers=[point_coords], radius=3)
-            point_masks_per_obj.append(_pm)
+            if not use_point_features:
+                _pm = create_circular_mask(H, W, centers=[point_coords], radius=3)
+                point_masks_per_obj.append(_pm)
 
             coords.append([point_coords[0], point_coords[1], t])
             if unique_timestamp:
                 t+=1
             num_scrbs_per_mask[i]+=1
         fg_coords_list.append(coords)
-        fg_point_masks.append(torch.from_numpy(np.stack(point_masks_per_obj, axis=0)).to(torch.uint8))
+        if not use_point_features:
+            fg_point_masks.append(torch.from_numpy(np.stack(point_masks_per_obj, axis=0)).to(torch.uint8))
     
     if np.random.rand() < 0.2:
         return num_scrbs_per_mask, fg_coords_list, None, fg_point_masks, None
@@ -94,8 +98,9 @@ def get_clicks_coords(masks, max_num_points=6, radius_size=8, first_click_center
     point_masks_per_bg = []
     for index in indices:
         point_coords = sample_locations[index]
-        _pm = create_circular_mask(H, W, centers=[point_coords], radius=3)
-        point_masks_per_bg.append(_pm)
+        if not use_point_features:
+            _pm = create_circular_mask(H, W, centers=[point_coords], radius=3)
+            point_masks_per_bg.append(_pm)
         bg_coords_list.append([point_coords[0], point_coords[1], t])
         if unique_timestamp:
             t+=1
