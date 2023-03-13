@@ -243,6 +243,8 @@ class Trainer(DefaultTrainer):
         results = OrderedDict()
         max_interactions =10
         # dataset_name = "davis_2017_val"
+        seed_id = cfg.EVALUATION_STRATEGY.SEED_ID
+        normalize_time = cfg.EVALUATION_STRATEGY.NORMALIZE_TIME 
         model_name = cfg.MODEL.WEIGHTS.split("/")[-2]
         for idx, dataset_name in enumerate(cfg.DATASETS.TEST):
             # if cfg.ITERATIVE.TRAIN.USE_ARGMAX:
@@ -250,17 +252,21 @@ class Trainer(DefaultTrainer):
             eval_strategy = cfg.EVALUATION_STRATEGY.TYPE
             data_loader = cls.build_test_loader(cfg, dataset_name)
             from mask2former.evaluation.multi_instances_evaluation_final import evaluate
+            if eval_strategy == "max_dt":
+                from mask2former.evaluation.multi_instances_evaluation_final_max_dt import evaluate
             # if eval_strategy in ["worst", "best"]:
             model_name += f"_{eval_strategy}"
             if eval_strategy == "random":
-                now = datetime.datetime.now()
-                # # dd/mm/YY H:M:S
-                dt_string = now.strftime("%d_%m_%Y_%H_%M_%S_")
-                # if per_obj:
-                #     model_name += "_per_obj_"
-                model_name += f"_{dt_string}"
+                # now = datetime.datetime.now()
+                # # # dd/mm/YY H:M:S
+                # dt_string = now.strftime("%d_%m_%Y_%H_%M_%S_")
+                # # if per_obj:
+                # #     model_name += "_per_obj_"
+                # model_name += f"_{dt_string}"
+                model_name+= f"_seed_{seed_id}"
             
-            results_i = evaluate(model, data_loader,cfg, dataset_name, sampling_strategy=1,eval_strategy = eval_strategy)
+            results_i = evaluate(model, data_loader,cfg, dataset_name, sampling_strategy=1,
+                                eval_strategy = eval_strategy,seed_id=seed_id,normalize_time=normalize_time)
             results_i = comm.gather(results_i, dst=0)  # [res1:dict, res2:dict,...]
             if comm.is_main_process():
                 # sum the values with same keys
@@ -273,22 +279,6 @@ class Trainer(DefaultTrainer):
                 log_multi_instance(res_gathered, max_interactions=max_interactions,
                                 dataset_name=dataset_name, model_name=model_name,
                                 sampling_strategy=1)
-            # else:
-            #     model_name += f"_{eval_strategy}"
-            #     # for j in range(5):
-            #     results_i = evaluate(model, data_loader,cfg, dataset_name, sampling_strategy=1, eval_strategy = eval_strategy)
-            #     results_i = comm.gather(results_i, dst=0)  # [res1:dict, res2:dict,...]
-            #     if comm.is_main_process():
-            #         # sum the values with same keys
-            #         assert len(results_i) > 0
-            #         res_gathered = results_i[0]
-            #         results_i.pop(0)
-            #         for _d in results_i:
-            #             for k in _d.keys():
-            #                 res_gathered[k] += _d[k]
-            #         log_multi_instance(res_gathered, max_interactions=max_interactions,
-            #                         dataset_name=dataset_name, model_name=model_name,
-            #                         sampling_strategy=1)
         
     
         return {}
@@ -318,6 +308,8 @@ def setup(args):
     # for poly lr schedule
     cfg.EVALUATION_STRATEGY = CN()
     cfg.EVALUATION_STRATEGY.TYPE = args.eval_strategy
+    cfg.EVALUATION_STRATEGY.SEED_ID = args.seed_id
+    cfg.EVALUATION_STRATEGY.NORMALIZE_TIME = args.normalize_time
 
     add_deeplab_config(cfg)
     add_maskformer2_config(cfg)
@@ -331,6 +323,8 @@ def setup(args):
     
     # cfg.EVALUATION_STRATEGY = CN()
     cfg.EVALUATION_STRATEGY.TYPE = args.eval_strategy
+    cfg.EVALUATION_STRATEGY.SEED_ID = args.seed_id
+    cfg.EVALUATION_STRATEGY.NORMALIZE_TIME = args.normalize_time
     cfg.freeze()
     default_setup(cfg, args)
     # Setup logger for "mask_former" module
@@ -394,8 +388,10 @@ def default_argument_parser(epilog=None):
         "See documentation of `DefaultTrainer.resume_or_load()` for what it means.",
     )
     parser.add_argument("--eval-only", action="store_true", help="perform evaluation only")
+    parser.add_argument("--normalize-time", action="store_true", help="normalize time coordinate")
     parser.add_argument("--eval-dataset", type=str, default="davis_2017_val", help="perform evaluation on given datset")
     parser.add_argument("--eval-strategy", type=str, default="worst", help="evaluation strategy")
+    parser.add_argument("--seed-id", type=int, default=0, help="seed id for random evaluation")
     parser.add_argument("--num-gpus", type=int, default=1, help="number of gpus *per machine*")
     parser.add_argument("--num-machines", type=int, default=1, help="total number of machines")
     parser.add_argument(

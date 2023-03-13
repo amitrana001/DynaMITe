@@ -98,7 +98,7 @@ def get_avg_noc(
             num_instances, h_t, w_t = gt_masks.shape[:]
             total_num_instances+=num_instances
             
-            zoom = zoomIn(cfg, gt_masks, inputs, model, expansion_ratio=1.4)
+            # zoom = zoomIn(cfg, gt_masks, inputs, model, expansion_ratio=1.4)
             ignore_masks = None
             if 'ignore_mask' in inputs[0]:
                 ignore_masks = inputs[0]['ignore_mask'].to(device='cpu', dtype = torch.uint8)
@@ -174,12 +174,12 @@ def get_avg_noc(
                 pred_masks = processed_results[0]['instances'].pred_masks.to('cpu',dtype=torch.uint8)
                 pred_masks = torchvision.transforms.Resize(size = (h_t,w_t))(pred_masks)
 
-                pred_masks, object_roi = zoom.apply_zoom(coords,inputs, pred_masks, images, scribbles, num_insts,
-                                                        features, mask_features, transformer_encoder_features,
-                                                        multi_scale_features, prev_mask_logits,
-                                                        batched_num_scrbs_per_mask,
-                                                        batched_fg_coords_list, batched_bg_coords_list,
-                                                        batched_max_timestamp = batched_max_timestamp)
+                # pred_masks, object_roi = zoom.apply_zoom(coords,inputs, pred_masks, images, scribbles, num_insts,
+                #                                         features, mask_features, transformer_encoder_features,
+                #                                         multi_scale_features, prev_mask_logits,
+                #                                         batched_num_scrbs_per_mask,
+                #                                         batched_fg_coords_list, batched_bg_coords_list,
+                #                                         batched_max_timestamp = batched_max_timestamp)
                 
                 
                 ious = compute_iou(gt_masks,pred_masks,ious,iou_threshold,ignore_masks)

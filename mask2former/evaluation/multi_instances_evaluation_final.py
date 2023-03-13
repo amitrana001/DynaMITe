@@ -25,7 +25,7 @@ color_map = colormap(rgb=True, maximum=1)
 def evaluate(
     model, data_loader, cfg, dataset_name=None, save_stats_summary =True, 
     iou_threshold = 0.85, max_interactions = 10, sampling_strategy=0,
-    eval_strategy = "worst"
+    eval_strategy = "worst", seed_id = 0, normalize_time = True
 ):
     """
     Run model on the data_loader and evaluate the metrics with evaluator.
@@ -91,7 +91,9 @@ def evaluate(
         fg_click_coords_per_image = {}
         bg_click_coords_per_image = {}
         # num_instances_per_image = {}
-
+        
+        if eval_strategy == "random":
+            random.seed(123456+seed_id)
         start_data_time = time.perf_counter()
         for idx, inputs in enumerate(data_loader):
             if 'bg_mask' not in inputs[0]:
@@ -131,7 +133,10 @@ def evaluate(
             radius = 3
             max_iters_for_image = max_interactions * num_instances
             not_clicked_map = np.ones_like(gt_masks[0], dtype=np.bool)
-
+            
+            batched_max_timestamp = None
+            if normalize_time:
+                batched_max_timestamp= [num_instances-1]
             if sampling_strategy == 0:
                 # coords = inputs[0]["coords"]
                 for coords_list in inputs[0]['fg_click_coords']:
@@ -148,7 +153,7 @@ def evaluate(
             num_insts, features, mask_features,
             transformer_encoder_features, multi_scale_features,
             batched_num_scrbs_per_mask,batched_fg_coords_list,
-            batched_bg_coords_list) = model(inputs)
+            batched_bg_coords_list) = model(inputs,batched_max_timestamp=batched_max_timestamp)
 
             orig_device = images.tensor.device
             time_per_image_features.append(time.perf_counter() - start_features_time)
@@ -210,6 +215,8 @@ def evaluate(
                             point_sampled = True
                         break
                 if point_sampled:
+                    if normalize_time:
+                        batched_max_timestamp[0]+=1
                     num_interactions+=1
                     clicked_objects_per_interaction[f"{inputs[0]['image_id']}_{idx}"].append(index_clicked)
                     prev_mask_logits=None    
@@ -222,7 +229,8 @@ def evaluate(
                                                 features, mask_features, transformer_encoder_features,
                                                 multi_scale_features, prev_mask_logits,
                                                 batched_num_scrbs_per_mask,
-                                                batched_fg_coords_list, batched_bg_coords_list)
+                                                batched_fg_coords_list, batched_bg_coords_list,
+                                                batched_max_timestamp)
                     time_per_intreaction_tranformer_decoder.append(time.perf_counter() - start_transformer_decoder_time)
                     time_per_image+=time.perf_counter() - start_transformer_decoder_time
 

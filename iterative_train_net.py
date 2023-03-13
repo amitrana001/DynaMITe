@@ -336,10 +336,10 @@ def setup(args):
 def main(args):
     cfg = setup(args)
 
-    # import debugpy
-    # debugpy.listen(5678)
-    # print("Waiting for debugger")
-    # debugpy.wait_for_client()
+    import debugpy
+    debugpy.listen(5678)
+    print("Waiting for debugger")
+    debugpy.wait_for_client()
     
     if args.eval_only:
         model = Trainer.build_model(cfg)

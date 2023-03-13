@@ -253,6 +253,8 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
         use_pos_coords: bool,
         use_time_coords: bool,
         unique_timestamp: bool,
+        concat_xyt:bool,
+        use_only_time:bool,
         use_argmax: bool,
         use_rev_cross_attn: bool,
         rev_cross_attn_num_layers: int,
@@ -313,6 +315,8 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
         self.per_obj_sampling = per_obj_sampling
         self.use_time_coords = use_time_coords
         self.unique_timestamp = unique_timestamp
+        self.concat_xyt = concat_xyt
+        self.use_only_time = use_only_time
 
         self.use_argmax = use_argmax
         self.use_coords_on_point_mask = use_coords_on_point_mask
@@ -399,7 +403,9 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
         )
 
         self.use_pos_coords = use_pos_coords
-        if self.use_pos_coords:
+        if self.concat_xyt:
+            self.ca_qpos_sine_proj = nn.Linear(3*(hidden_dim//2), hidden_dim)
+        elif self.use_pos_coords:
             self.ca_qpos_sine_proj = nn.Linear(hidden_dim, hidden_dim)
         # self.descriptor_projection = nn.linear()
         # learnable query p.e.
@@ -414,6 +420,7 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
         else:
             self.register_parameter("bg_query", nn.Parameter(torch.zeros(hidden_dim), False))
 
+        # if self.un
         # level embedding (we always use 3 scales)
         self.num_feature_levels = 3
         self.level_embed = nn.Embedding(self.num_feature_levels, hidden_dim)
@@ -472,6 +479,8 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
         ret["use_pos_coords"] = cfg.ITERATIVE.TRAIN.USE_POS_COORDS
         ret["use_time_coords"] = cfg.ITERATIVE.TRAIN.USE_TIME_COORDS
         ret["unique_timestamp"] =  cfg.ITERATIVE.TRAIN.UNIQUE_TIMESTAMP
+        ret["concat_xyt"] = cfg.ITERATIVE.TRAIN.CONCAT_XYT
+        ret["use_only_time"] = cfg.ITERATIVE.TRAIN.USE_ONLY_TIME
 
         ret["use_static_bg_queries"] = cfg.ITERATIVE.TRAIN.USE_STATIC_BG_QUERIES
         ret["num_static_bg_queries"] = cfg.ITERATIVE.TRAIN.NUM_STATIC_BG_QUERIES
@@ -647,7 +656,8 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
                                                     output.shape[1], height, width, output.device, batched_max_timestamp=batched_max_timestamp
                             ) # bsxQx3
             pos_coord_embed = self.gen_sineembed_for_position(scrbs_coords.permute(1,0,2), use_timestamp=self.use_time_coords,
-                                                                batched_max_timestamp=batched_max_timestamp) # Q x bs x C
+                                                                batched_max_timestamp=batched_max_timestamp, use_only_time=self.use_only_time,
+                                                                concat_xyt=self.concat_xyt) # Q x bs x C
             pos_coord_embed = self.ca_qpos_sine_proj(pos_coord_embed.to(query_embed.dtype))
             
             query_embed = query_embed + pos_coord_embed
@@ -748,11 +758,21 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
         else:
             return [{"pred_masks": b} for b in outputs_seg_masks[:-1]]
     
-    def gen_sineembed_for_position(self, pos_tensor, use_timestamp = False, batched_max_timestamp=None):
+    def gen_sineembed_for_position(self, pos_tensor, use_timestamp = False, batched_max_timestamp=None, 
+                                   use_only_time = False, concat_xyt=False):
         # n_query, bs, 3 = pos_tensor.size()
         # sineembed_tensor = torch.zeros(n_query, bs, 256)
         import math
         scale = 2 * math.pi
+        if use_only_time:
+            dim_t = torch.arange(256, dtype=torch.float, device=pos_tensor.device)
+            dim_t = 10000 ** (2 * torch.div(dim_t, 2, rounding_mode='floor') / 256)
+            t_embed = pos_tensor[:, :, 2] * scale
+            pos_t = t_embed[:, :, None] / dim_t
+            pos_t[:, :, 0::2][torch.where(pos_t[:, :, 0::2] < 0)] = 0.0
+            pos_t[:, :, 1::2][torch.where(pos_t[:, :, 1::2] < 0)] = math.pi/2
+            pos_t = torch.stack((pos_t[:, :, 0::2].sin(), pos_t[:, :, 1::2].cos()), dim=3).flatten(2)
+            return pos_t
         dim_t = torch.arange(128, dtype=torch.float, device=pos_tensor.device)
         dim_t = 10000 ** (2 * torch.div(dim_t, 2, rounding_mode='floor') / 128)
         x_embed = pos_tensor[:, :, 1] * scale
@@ -772,6 +792,9 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
             pos_t[:, :, 0::2][torch.where(pos_t[:, :, 0::2] < 0)] = 0.0
             pos_t[:, :, 1::2][torch.where(pos_t[:, :, 1::2] < 0)] = math.pi/2
             pos_t = torch.stack((pos_t[:, :, 0::2].sin(), pos_t[:, :, 1::2].cos()), dim=3).flatten(2)
+            if concat_xyt:
+                pos = torch.cat((pos_y, pos_x, pos_t), dim=2)
+                return pos
             pos_x+=pos_t
             pos_y+=pos_t
         pos = torch.cat((pos_y, pos_x), dim=2)
