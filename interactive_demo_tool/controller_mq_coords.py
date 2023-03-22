@@ -148,8 +148,10 @@ class InteractiveController:
             print("add an instance")
             self.update_image_callback()
             return 
-        new_y = round(y*self.rh)
-        new_x = round(x*self.rw)
+        # new_y = round(y*self.rh)
+        # new_x = round(x*self.rw)
+        new_y = y*self.rh
+        new_x = x*self.rw
         if bg_click:
             # self.bg_scrbs.append(np.zeros(self.image.shape[:2], dtype = np.uint8))
             

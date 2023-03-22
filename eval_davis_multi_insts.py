@@ -270,7 +270,7 @@ class Trainer(DefaultTrainer):
             
             results_i = evaluate(model, data_loader,cfg, dataset_name, sampling_strategy=1,
                                 iou_threshold = 0.85, max_interactions = 10,
-                                eval_strategy = eval_strategy,seed_id=seed_id,normalize_time=normalize_time)
+                                eval_strategy = eval_strategy,seed_id=seed_id,normalize_time=False)
             results_i = comm.gather(results_i, dst=0)  # [res1:dict, res2:dict,...]
             if comm.is_main_process():
                 # sum the values with same keys

@@ -255,10 +255,10 @@ class Trainer(DefaultTrainer):
                     # model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + f"_S{s}"
                     model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + cfg.MODEL.WEIGHTS.split("/")[-1][5:-4] + f"_S{s}"
                     if cfg.ITERATIVE.TRAIN.USE_ARGMAX:
-                        model_name += "_argmax"
+                        model_name += "_pf_from_ps"
                     results_i = get_avg_noc(model, data_loader, cfg, iou_threshold = iou,
                                             dataset_name=dataset_name,sampling_strategy=s,
-                                            max_interactions=max_interactions,normalize_time=True)
+                                            max_interactions=max_interactions,normalize_time=False)
                     results_i = comm.gather(results_i, dst=0)  # [res1:dict, res2:dict,...]
                     if comm.is_main_process():
                         # sum the values with same keys

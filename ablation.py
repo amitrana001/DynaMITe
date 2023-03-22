@@ -5,7 +5,7 @@ MaskFormer Training Script.
 This script is a simplified version of the training script in detectron2/tools.
 """
 import csv
-
+from detectron2.config import CfgNode as CN
 import numpy as np
 
 try:
@@ -242,7 +242,7 @@ class Trainer(DefaultTrainer):
         results = OrderedDict()
         from mask2former.evaluation.single_instance_evaluation_coords import get_avg_noc
         for dataset_name in ["GrabCut", "Berkeley",  "davis_single_inst", "coco_Mval", 'sbd_single_inst',"davis585"]:
-
+        # for dataset_name in ["davis_single_inst","coco_Mval"]:
             data_loader = cls.build_test_loader(cfg, dataset_name)
             
             evaluator =None
@@ -258,7 +258,7 @@ class Trainer(DefaultTrainer):
                         model_name += "_argmax"
                     results_i = get_avg_noc(model, data_loader, cfg, iou_threshold = iou,
                                             dataset_name=dataset_name,sampling_strategy=s,
-                                            max_interactions=max_interactions)
+                                            max_interactions=max_interactions,normalize_time=True)
                     results_i = comm.gather(results_i, dst=0)  # [res1:dict, res2:dict,...]
                     if comm.is_main_process():
                         # sum the values with same keys
@@ -274,7 +274,8 @@ class Trainer(DefaultTrainer):
                         # )
                         # print_csv_format(res_gathered)
                         log_single_instance(res_gathered, max_interactions=max_interactions,
-                                            dataset_name=dataset_name, model_name=model_name, ablation=True)
+                                            dataset_name=dataset_name, model_name=model_name,
+                                            save_summary_stats=False, ablation=True)
 
         return {}
 
@@ -301,6 +302,9 @@ def setup(args):
     """
     cfg = get_cfg()
     # for poly lr schedule
+    cfg.EVALUATION_STRATEGY = CN()
+    cfg.EVALUATION_STRATEGY.TYPE = None
+    cfg.EVALUATION_STRATEGY.NORMALIZE_TIME = False
     add_deeplab_config(cfg)
     add_maskformer2_config(cfg)
     add_hrnet_config(cfg)
@@ -310,6 +314,9 @@ def setup(args):
     #     cfg.SEED = 46699430
     # cfg.OUTPUT_DIR = "./all_data/new_models/class_agnostic"
     cfg.ITERATIVE.TRAIN.USE_ARGMAX = True
+    # cfg.EVALUATION_STRATEGY = CN()
+    cfg.EVALUATION_STRATEGY.NORMALIZE_TIME = True
+    cfg.EVALUATION_STRATEGY.TYPE = None
     cfg.freeze()
     default_setup(cfg, args)
     # Setup logger for "mask_former" module

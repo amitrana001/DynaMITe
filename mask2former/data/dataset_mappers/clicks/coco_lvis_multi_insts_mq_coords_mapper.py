@@ -71,7 +71,9 @@ class COCOLVISMultiInstMQCoordsDatasetMapper:
         image_format,
         unique_timestamp,
         use_point_features,
-        random_bg_queries=False
+        min_area,
+        random_bg_queries=False,
+        stuff_prob=0.15,
     ):
         """
         NOTE: this interface is experimental.
@@ -88,10 +90,11 @@ class COCOLVISMultiInstMQCoordsDatasetMapper:
 
         self.img_format = image_format
         self.is_train = is_train
-        self.min_area = 1000.0
+        self.min_area = min_area
         self.random_bg_queries = random_bg_queries
         self.unique_timestamp = unique_timestamp
         self.use_point_features = use_point_features
+        self.stuff_prob = stuff_prob
     
     @classmethod
     def from_config(cls, cfg, is_train=True):
@@ -105,6 +108,8 @@ class COCOLVISMultiInstMQCoordsDatasetMapper:
             "random_bg_queries": cfg.ITERATIVE.TRAIN.RANDOM_BG_QUERIES,
             "unique_timestamp": cfg.ITERATIVE.TRAIN.UNIQUE_TIMESTAMP,
             "use_point_features": cfg.ITERATIVE.TRAIN.USE_POINT_FEATURES,
+            "stuff_prob": cfg.ITERATIVE.TRAIN.STUFF_PROB,
+            "min_area": cfg.INPUT.MIN_AREA_FOR_MASK
         }
         return ret
 
@@ -138,21 +143,21 @@ class COCOLVISMultiInstMQCoordsDatasetMapper:
         dataset_dict["image"] = torch.as_tensor(np.ascontiguousarray(image.transpose(2, 0, 1)))
         dataset_dict["padding_mask"] = torch.as_tensor(np.ascontiguousarray(padding_mask))
 
-        stuff_prob = 0
+        # stuff_prob = 0
         if "annotations" in dataset_dict:
 
             # USER: Implement additional transformations if you have other types of data
-            if stuff_prob > 0 and random.random() < stuff_prob: 
+            if self.stuff_prob > 0 and random.random() < self.stuff_prob: 
                 annos = [
                     utils.transform_instance_annotations(obj, transforms, image_shape)
                     for obj in dataset_dict.pop("annotations")
-                    if (obj.get("iscrowd", 0) == 0 and obj.get("area",0) > 1000.0) 
+                    if (obj.get("iscrowd", 0) == 0 and obj.get("area",0) > self.min_area) 
                 ]
             else:
                 annos = [
                     utils.transform_instance_annotations(obj, transforms, image_shape)
                     for obj in dataset_dict.pop("annotations")
-                    if (obj.get("iscrowd", 0) == 0 and obj.get("isThing") and obj.get("area",0) > 1000.0)
+                    if (obj.get("iscrowd", 0) == 0 and obj.get("isThing") and obj.get("area",0) > self.min_area)
                 ]
             # NOTE: does not support BitMask due to augmentation
             # Current BitMask cannot handle empty objects
