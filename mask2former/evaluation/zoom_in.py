@@ -43,6 +43,7 @@ class zoomIn:
 
         # pred_masks: H_t x W_t
         mask_with_zoom = copy.deepcopy(pred_masks)
+        orig_h, orig_w = mask_with_zoom.shape[-2:]
         # scribbles = sem_seg_postprocess(scribbles[0].to('cpu'), images.image_sizes[0], self.H_t, self.W_t)
         mask_features = copy.deepcopy(mask_features)
         multi_scale_features = copy.deepcopy(multi_scale_features)
@@ -53,8 +54,16 @@ class zoomIn:
         h_m,w_m = mask_features.shape[-2:]
         mask_features_resized = torchvision.transforms.Resize(size = (h_padded,w_padded))(mask_features)
         mask_features_resized = mask_features_resized[:,:,rmin:rmax + 1, cmin:cmax + 1]
+        crop_height, crop_width = mask_features_resized.shape[-2:]
+
         mask_features_resized =  torchvision.transforms.Resize(size = (h_m,w_m))(mask_features_resized)
 
+        rh = orig_h/crop_height
+        rw = orig_w/crop_width
+
+        roi_input = copy.deepcopy(inputs)
+        roi_input[0]['height'] = crop_height
+        roi_input[0]['width']  = crop_width
         multi_scale_features_resized = []
         for i in range(3):
             
@@ -71,7 +80,9 @@ class zoomIn:
         obj_coords = batched_fg_coords_list[0][0]
         for coords in obj_coords:
             if (coords[0]>=rmin and coords[0]<= rmax) and(coords[1]>=cmin and coords[1]<=cmax):
-                new_obj_coords.append(coords)
+                new_r = round(rh*(coords[0]-rmin))
+                new_h = round(rw*(coords[1]-cmin))
+                new_obj_coords.append([new_r, new_h, coords[2]])
                 new_batched_num_scrbs_per_mask[0][0]+=1
         new_batched_fg_coords_list.append([new_obj_coords])
         
@@ -82,11 +93,13 @@ class zoomIn:
             new_obj_coords = []
             for coords in batched_bg_coords_list[0]:
                 if (coords[0]>=rmin and coords[0]<= rmax) and(coords[1]>=cmin and coords[1]<=cmax):
-                    new_obj_coords.append(coords)
+                    new_r = round(rh*(coords[0]-rmin))
+                    new_h = round(rw*(coords[1]-cmin))
+                    new_obj_coords.append([new_r, new_h, coords[2]])
             new_batched_bg_coords_list.append(new_obj_coords) 
         
 
-        processed_results = self.model(inputs, images, scribbles, num_insts,
+        processed_results = self.model(roi_input, images, scribbles, num_insts,
                                         features, mask_features_resized, transformer_encoder_features,
                                         multi_scale_features_resized, prev_mask_logits,
                                         new_batched_num_scrbs_per_mask,
@@ -94,28 +107,10 @@ class zoomIn:
                                         batched_max_timestamp = batched_max_timestamp)[0]
         
         pred_masks = processed_results[0]['instances'].pred_masks.to('cpu',dtype=torch.uint8)
-        pred_masks = torchvision.transforms.Resize(size = (rmax-rmin+1,cmax-cmin+1))(pred_masks)
+        # pred_masks = torchvision.transforms.Resize(size = (rmax-rmin+1,cmax-cmin+1))(pred_masks)
 
-        # roi_input = copy.deepcopy(inputs)
-        # cropped_image = np.array(inputs[0]['image']).transpose(1,2,0)[rmin:rmax + 1, cmin:cmax + 1,:]
-        # crop_height, crop_width = cropped_image.shape[:2]
-
-        # image, transforms = T.apply_transform_gens(self.augmentation, cropped_image)
-        # roi_input[0]['image'] = torch.as_tensor(np.ascontiguousarray(image.transpose(2, 0, 1)))
-        # roi_input[0]['height'] = crop_height
-        # roi_input[0]['width']  = crop_width
-
-        # image_shape = image.shape[:2]
-        # trans = torchvision.transforms.Resize(image_shape)
-        # roi_input[0]['fg_scrbs'] = trans(inputs[0]['fg_scrbs'][:,rmin:rmax + 1, cmin:cmax + 1])
-        # roi_input[0]['bg_scrbs'] = None
-        # if inputs[0]['bg_scrbs'] is not None:
-        #     roi_input[0]['bg_scrbs'] = trans(inputs[0]['bg_scrbs'][:,rmin:rmax + 1, cmin:cmax + 1])
-
-        # processed_results, _, _, _, _, _, _, _, _ = self.model(roi_input)
-        # roi_mask = processed_results[0]['instances'].pred_masks.to('cpu',dtype=torch.uint8)
-        # roi_mask = torchvision.transforms.Resize(size = (crop_height,crop_width))(roi_mask)
-        mask_with_zoom[:,rmin:rmax + 1, cmin:cmax + 1] = pred_masks[0]
+        # mask_with_zoom[:,rmin:rmax + 1, cmin:cmax + 1] = pred_masks[0]
+        mask_with_zoom[:,rmin:rmax + 1, cmin:cmax + 1] = torch.logical_and(mask_with_zoom[:,rmin:rmax + 1, cmin:cmax + 1], pred_masks[0]).to(dtype=torch.uint8)
         return mask_with_zoom, [rmin,rmax,cmin,cmax] 
 
 def get_object_roi(pred_mask, click_coords, expansion_ratio, min_crop_size=None):

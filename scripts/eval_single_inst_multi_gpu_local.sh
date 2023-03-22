@@ -5,6 +5,6 @@ export PYTHONPATH=.:$PYTHONPATH
 conda activate m2f
 
 MASTER_NODE=$(scontrol show hostname "$SLURM_NODELIST" | head -n1)
-DIST_URL="tcp://$MASTER_NODE:12209"
+DIST_URL="tcp://$MASTER_NODE:10009"
 
 NCCL_DEBUG=INFO python iterative_eval_single_inst.py --eval-only --config-file $1 --dist-url "$DIST_URL" --num-gpus $3 MODEL.WEIGHTS $2

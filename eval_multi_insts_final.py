@@ -26,6 +26,7 @@ from collections import OrderedDict
 from typing import Any, Dict, List, Set
 
 import torch
+import torch.distributed as dist
 
 import detectron2.utils.comm as comm
 from detectron2.checkpoint import DetectionCheckpointer
@@ -245,40 +246,44 @@ class Trainer(DefaultTrainer):
         # dataset_name = "davis_2017_val"
         seed_id = cfg.EVALUATION_STRATEGY.SEED_ID
         normalize_time = cfg.EVALUATION_STRATEGY.NORMALIZE_TIME 
+        eval_strategy = cfg.EVALUATION_STRATEGY.TYPE
         model_name = cfg.MODEL.WEIGHTS.split("/")[-2]
-        for idx, dataset_name in enumerate(cfg.DATASETS.TEST):
-            # if cfg.ITERATIVE.TRAIN.USE_ARGMAX:
-            #     model_name+="_argmax"
-            eval_strategy = cfg.EVALUATION_STRATEGY.TYPE
-            data_loader = cls.build_test_loader(cfg, dataset_name)
-            from mask2former.evaluation.multi_instances_evaluation_final import evaluate
-            if eval_strategy == "max_dt":
-                from mask2former.evaluation.multi_instances_evaluation_final_max_dt import evaluate
-            # if eval_strategy in ["worst", "best"]:
-            model_name += f"_{eval_strategy}"
-            if eval_strategy == "random":
-                # now = datetime.datetime.now()
-                # # # dd/mm/YY H:M:S
-                # dt_string = now.strftime("%d_%m_%Y_%H_%M_%S_")
-                # # if per_obj:
-                # #     model_name += "_per_obj_"
-                # model_name += f"_{dt_string}"
-                model_name+= f"_seed_{seed_id}"
-            
-            results_i = evaluate(model, data_loader,cfg, dataset_name, sampling_strategy=1,
-                                eval_strategy = eval_strategy,seed_id=seed_id,normalize_time=normalize_time)
-            results_i = comm.gather(results_i, dst=0)  # [res1:dict, res2:dict,...]
-            if comm.is_main_process():
-                # sum the values with same keys
-                assert len(results_i) > 0
-                res_gathered = results_i[0]
-                results_i.pop(0)
-                for _d in results_i:
-                    for k in _d.keys():
-                        res_gathered[k] += _d[k]
-                log_multi_instance(res_gathered, max_interactions=max_interactions,
-                                dataset_name=dataset_name, model_name=model_name,
-                                sampling_strategy=1)
+        model_name += f"_{eval_strategy}"
+        for t in range(20,21):
+            for idx, dataset_name in enumerate(cfg.DATASETS.TEST):
+                # if cfg.ITERATIVE.TRAIN.USE_ARGMAX:
+                #     model_name+="_argmax"
+                eval_strategy = cfg.EVALUATION_STRATEGY.TYPE
+                data_loader = cls.build_test_loader(cfg, dataset_name)
+                from mask2former.evaluation.multi_instances_evaluation_final import evaluate
+                if eval_strategy == "max_dt":
+                    from mask2former.evaluation.multi_instances_evaluation_final_max_dt import evaluate
+                # if eval_strategy in ["worst", "best"]:
+                # model_name += f"_{eval_strategy}"
+                if eval_strategy == "random":
+                    # now = datetime.datetime.now()
+                    # # # dd/mm/YY H:M:S
+                    # dt_string = now.strftime("%d_%m_%Y_%H_%M_%S_")
+                    # # if per_obj:
+                    # #     model_name += "_per_obj_"
+                    # model_name += f"_{dt_string}"
+                    model_name+= f"_seed_{seed_id}"
+                
+                results_i = evaluate(model, data_loader,cfg, dataset_name, sampling_strategy=1,
+                                    iou_threshold = 1.01, max_interactions = t,
+                                    eval_strategy = eval_strategy,seed_id=seed_id,normalize_time=normalize_time)
+                results_i = comm.gather(results_i, dst=0)  # [res1:dict, res2:dict,...]
+                if comm.is_main_process():
+                    # sum the values with same keys
+                    assert len(results_i) > 0
+                    res_gathered = results_i[0]
+                    results_i.pop(0)
+                    for _d in results_i:
+                        for k in _d.keys():
+                            res_gathered[k] += _d[k]
+                    log_multi_instance(res_gathered, max_interactions=t,
+                                    dataset_name=dataset_name, model_name=model_name,
+                                    sampling_strategy=1)
         
     
         return {}

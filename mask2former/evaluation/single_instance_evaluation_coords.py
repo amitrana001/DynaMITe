@@ -19,7 +19,8 @@ color_map = colormap(rgb=True, maximum=1)
 
 def get_avg_noc(
     model, data_loader, cfg, iou_threshold = 0.85, dataset_name= None,
-    max_interactions = 20, is_post_process = False, sampling_strategy=2
+    max_interactions = 20, is_post_process = False, sampling_strategy=2,
+    normalize_time= False
 ):
     """
     Run model on the data_loader and evaluate the metrics with evaluator.
@@ -110,7 +111,10 @@ def get_avg_noc(
             num_interactions = 1
             ious = [0.0]*num_instances
             radius = 8
-            batched_max_timestamp= [1]
+
+            batched_max_timestamp = None
+            if normalize_time:
+                batched_max_timestamp= [1]
                    
             (processed_results, outputs, images, scribbles,
             num_insts, features, mask_features,
@@ -143,7 +147,8 @@ def get_avg_noc(
 
                         # pt_sampled_dict[inputs[0]['image_id']].append(coords)
                         total_num_interactions+=1
-                        batched_max_timestamp[0]+=1
+                        if normalize_time:
+                            batched_max_timestamp[0]+=1
                         scrbs = prepare_scribbles(scrbs,images)
                         if is_fg:
                             scribbles[0][i] = torch.cat([scribbles[0][i], scrbs], 0)
@@ -174,12 +179,13 @@ def get_avg_noc(
                 pred_masks = processed_results[0]['instances'].pred_masks.to('cpu',dtype=torch.uint8)
                 pred_masks = torchvision.transforms.Resize(size = (h_t,w_t))(pred_masks)
 
-                # pred_masks, object_roi = zoom.apply_zoom(coords,inputs, pred_masks, images, scribbles, num_insts,
-                #                                         features, mask_features, transformer_encoder_features,
-                #                                         multi_scale_features, prev_mask_logits,
-                #                                         batched_num_scrbs_per_mask,
-                #                                         batched_fg_coords_list, batched_bg_coords_list,
-                #                                         batched_max_timestamp = batched_max_timestamp)
+                # if num_interactions>0:
+                #     pred_masks, object_roi = zoom.apply_zoom(coords,inputs, pred_masks, images, scribbles, num_insts,
+                #                                             features, mask_features, transformer_encoder_features,
+                #                                             multi_scale_features, prev_mask_logits,
+                #                                             batched_num_scrbs_per_mask,
+                #                                             batched_fg_coords_list, batched_bg_coords_list,
+                #                                             batched_max_timestamp = batched_max_timestamp)
                 
                 
                 ious = compute_iou(gt_masks,pred_masks,ious,iou_threshold,ignore_masks)

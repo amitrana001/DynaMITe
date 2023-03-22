@@ -345,7 +345,7 @@ def prepare_scribbles(scribbles,images):
     return padded_scribbles
 
 
-def log_single_instance(res, max_interactions, dataset_name, model_name, ablation=False):
+def log_single_instance(res, max_interactions, dataset_name, model_name, ablation=False, save_summary_stats=False):
     logger = logging.getLogger(__name__)
     total_num_instances = sum(res['total_num_instances'])
     total_num_interactions = sum(res['total_num_interactions'])
@@ -367,6 +367,18 @@ def log_single_instance(res, max_interactions, dataset_name, model_name, ablatio
     dataset_iou_list = {}
     for _d in res['dataset_iou_list']:
         dataset_iou_list.update(_d)
+    
+    if save_summary_stats:
+        if ablation:
+            save_summary_path = os.path.join(f"./output/evaluation/ablation/summary/{dataset_name}")
+        else:
+            save_summary_path = os.path.join(f"./output/evaluation/final/summary/{dataset_name}")
+        os.makedirs(save_summary_path, exist_ok=True)
+        stats_file = os.path.join(save_summary_path,
+                                    f"{model_name}_{max_interactions}.pickle")
+
+        with open(stats_file, 'wb') as handle:
+            pickle.dump(dataset_iou_list, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     NOC_80, NFO_80, IOU_80 = get_summary(dataset_iou_list, max_clicks=max_interactions, iou_thres=0.80)
     NOC_85, NFO_85, IOU_85 = get_summary(dataset_iou_list, max_clicks=max_interactions, iou_thres=0.85)

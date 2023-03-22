@@ -387,18 +387,19 @@ class InteractiveController:
         total_colors = len(color_map)-1
         
         point_clicks_map = np.ones_like(image)*255
-        if len(self.fg_orig_list):
-            for j, fg_coords_per_mask in enumerate(self.fg_orig_list):
-                for i, coords in enumerate(fg_coords_per_mask):
-                    color = np.array(color_map[total_colors-5*j-4], dtype=np.uint8)
+        if not show_only_masks:
+            if len(self.fg_orig_list):
+                for j, fg_coords_per_mask in enumerate(self.fg_orig_list):
+                    for i, coords in enumerate(fg_coords_per_mask):
+                        color = np.array(color_map[total_colors-5*j-4], dtype=np.uint8)
+                        color = ( int (color [ 0 ]), int (color [ 1 ]), int (color [ 2 ])) 
+                        image = cv2.circle(image, (int(coords[0]), int(coords[1])), click_radius, tuple(color), -1)
+            
+            if len(self.bg_orig_list):
+                for i, coords in enumerate(self.bg_orig_list):
+                    color = np.array([255,0,0], dtype=np.uint8)
                     color = ( int (color [ 0 ]), int (color [ 1 ]), int (color [ 2 ])) 
                     image = cv2.circle(image, (int(coords[0]), int(coords[1])), click_radius, tuple(color), -1)
-        
-        if len(self.bg_orig_list):
-            for i, coords in enumerate(self.bg_orig_list):
-                color = np.array([255,0,0], dtype=np.uint8)
-                color = ( int (color [ 0 ]), int (color [ 1 ]), int (color [ 2 ])) 
-                image = cv2.circle(image, (int(coords[0]), int(coords[1])), click_radius, tuple(color), -1)
         return image, point_clicks_map
 
 # def get_visualization(image, instances, prev_output=None, batched_fg_coords_list=None,batched_bg_coords_list=None,
