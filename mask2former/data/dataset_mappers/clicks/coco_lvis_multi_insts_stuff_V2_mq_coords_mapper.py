@@ -27,7 +27,7 @@ from mask2former.data.dataset_mappers.mapper_utils.datamapper_utils import visua
 # from mask2former.data.points.annotation_generator import gen_multi_points_per_mask, generate_point_to_blob_masks
 
 from mask2former.data.points.annotation_generator import create_circular_mask
-__all__ = ["COCOLVISMultiInstMQCoordsDatasetMapper"]
+__all__ = ["COCOLVISMultiInstStuffV2"]
 
 
 def filter_coco_lvis_instances(instances, min_area):
@@ -47,7 +47,7 @@ def filter_coco_lvis_instances(instances, min_area):
     return instances[m]    
 # This is specifically designed for the COCO dataset.
 
-class COCOLVISMultiInstMQCoordsDatasetMapper:
+class COCOLVISMultiInstStuffV2:
     """
     A callable which takes a dataset dict in Detectron2 Dataset format,
     and map it into a format used by MaskFormer.
@@ -187,19 +187,8 @@ class COCOLVISMultiInstMQCoordsDatasetMapper:
                 
                 # Make smaller object in front in case of overlapping masks
                 
-                # instances.gt_masks.tensor
+                mask_areas = torch.sum(instances.gt_masks.tensor, (1,2))
                 gt_masks = instances.gt_masks.tensor.to(dtype=torch.uint8)
-                if gt_masks.shape[0] == 1:
-                    num_masks = 1
-                else:
-                    #Take 75% masks as the foreground masks
-                    num_masks = min(int(gt_masks.shape[0]*(0.70)), 30)
-              
-                random_indices = random.sample(range(gt_masks.shape[0]),num_masks)
-                gt_masks = gt_masks[random_indices]
-
-                # mask_areas = torch.sum(instances.gt_masks.tensor, (1,2))
-                mask_areas = torch.sum(gt_masks, (1,2))
                 gt_masks =  gt_masks[sorted(range(len(mask_areas)),key=mask_areas.__getitem__,reverse=True)]
 
                 instance_map = torch.zeros((gt_masks.shape[-2:]), dtype=torch.int16)
@@ -226,26 +215,34 @@ class COCOLVISMultiInstMQCoordsDatasetMapper:
                 # filterd_gt_masks = []
                 new_instances = Instances(image_size=image_shape)
                 
+                if gt_masks.shape[0] == 1:
+                    num_masks = 1
+                else:
+                    #Take 75% masks as the foreground masks
+                    num_masks = min(int(gt_masks.shape[0]*(0.70)), 30)
+              
+                random_indices = random.sample(range(gt_masks.shape[0]),num_masks)
+                new_gt_masks = gt_masks[random_indices]
                 # new_gt_classes = instances.gt_classes[random_indices]
 
-                new_gt_classes = [0]*gt_masks.shape[0]
+                new_gt_classes = [0]*new_gt_masks.shape[0]
                 # new_gt_boxes = instances.gt_masks.get_bounding_boxes()[random_indices]
-                new_gt_boxes =  Boxes((np.zeros((gt_masks.shape[0],4))))
+                new_gt_boxes =  Boxes((np.zeros((new_gt_masks.shape[0],4))))
                 
-                new_instances.set('gt_masks', gt_masks)
+                new_instances.set('gt_masks', new_gt_masks)
                 new_instances.set('gt_classes', new_gt_classes)
                 new_instances.set('gt_boxes', new_gt_boxes) 
                 # filterd_gt_masks = []
                 # print(random_indices)
-                semantic_map = torch.zeros((gt_masks.shape[-2:]), dtype=torch.int16)
-                for _id, m in enumerate(gt_masks):
+                semantic_map = torch.zeros((new_gt_masks.shape[-2:]), dtype=torch.int16)
+                for _id, m in enumerate(new_gt_masks):
                     semantic_map[m == 1] = _id+1
                     all_masks = torch.logical_or(all_masks, m)
                 dataset_dict['semantic_map'] = semantic_map
                 # new_gt_masks = new_gt_masks.unsqueeze(0)
                 # print(new_gt_masks.shape)
                 (num_scrbs_per_mask, fg_coords_list, bg_coords_list,
-                fg_point_masks, bg_point_masks) = get_clicks_coords(gt_masks, all_masks=all_masks,
+                fg_point_masks, bg_point_masks) = get_clicks_coords(new_gt_masks, all_masks=all_masks,
                                                                     unique_timestamp = self.unique_timestamp,
                                                                     use_point_features=self.use_point_features)
         

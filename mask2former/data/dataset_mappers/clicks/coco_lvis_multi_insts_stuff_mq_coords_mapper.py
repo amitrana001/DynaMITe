@@ -27,7 +27,7 @@ from mask2former.data.dataset_mappers.mapper_utils.datamapper_utils import visua
 # from mask2former.data.points.annotation_generator import gen_multi_points_per_mask, generate_point_to_blob_masks
 
 from mask2former.data.points.annotation_generator import create_circular_mask
-__all__ = ["COCOLVISMultiInstMQCoordsDatasetMapper"]
+__all__ = ["COCOLVISMultiInstStuffMQCoordsDatasetMapper"]
 
 
 def filter_coco_lvis_instances(instances, min_area):
@@ -47,7 +47,7 @@ def filter_coco_lvis_instances(instances, min_area):
     return instances[m]    
 # This is specifically designed for the COCO dataset.
 
-class COCOLVISMultiInstMQCoordsDatasetMapper:
+class COCOLVISMultiInstStuffMQCoordsDatasetMapper:
     """
     A callable which takes a dataset dict in Detectron2 Dataset format,
     and map it into a format used by MaskFormer.
@@ -146,21 +146,50 @@ class COCOLVISMultiInstMQCoordsDatasetMapper:
         # stuff_prob = 0
         if "annotations" in dataset_dict:
 
-            # USER: Implement additional transformations if you have other types of data
-            if self.stuff_prob > 0 and random.random() < self.stuff_prob: 
-                annos = [
-                    utils.transform_instance_annotations(obj, transforms, image_shape)
-                    for obj in dataset_dict.pop("annotations")
-                    if (obj.get("iscrowd", 0) == 0 and obj.get("area",0) > self.min_area) 
-                ]
+            # # USER: Implement additional transformations if you have other types of data
+            # if self.stuff_prob > 0 and random.random() < self.stuff_prob: 
+            #     annos = [
+            #         utils.transform_instance_annotations(obj, transforms, image_shape)
+            #         for obj in dataset_dict.pop("annotations")
+            #         if (obj.get("iscrowd", 0) == 0 and obj.get("area",0) > self.min_area) 
+            #     ]
+            # else:
+            #     annos = [
+            #         utils.transform_instance_annotations(obj, transforms, image_shape)
+            #         for obj in dataset_dict.pop("annotations")
+            #         if (obj.get("iscrowd", 0) == 0 and obj.get("isThing") and obj.get("area",0) > self.min_area)
+            #     ]
+            things_annos = []
+            stuff_annos = []
+            for obj in dataset_dict.pop("annotations"):
+                if (obj.get("iscrowd", 0) == 0 and obj.get("area",0) > self.min_area):
+                    transform_obj = utils.transform_instance_annotations(obj, transforms, image_shape)
+                    if obj.get("isThing"):
+                        things_annos.append(transform_obj)
+                    else:
+                        stuff_annos.append(transform_obj)
+
+            # num_things = min(len(things_annos), max(1,int(len(things_annos)*0.80)))
+            num_things = round(len(things_annos)*0.70)
+              
+            random_indices = random.sample(range(len(things_annos)),num_things)
+            annos = []
+            for i in random_indices:
+                annos.append(things_annos[i])
+            
+            if num_things==0:
+                num_stuffs = int(np.ceil((len(stuff_annos)*self.stuff_prob)))
             else:
-                annos = [
-                    utils.transform_instance_annotations(obj, transforms, image_shape)
-                    for obj in dataset_dict.pop("annotations")
-                    if (obj.get("iscrowd", 0) == 0 and obj.get("isThing") and obj.get("area",0) > self.min_area)
-                ]
+                num_stuffs = min(len(stuff_annos), int(np.ceil(num_things*self.stuff_prob)))
+            
+            random_indices = random.sample(range(len(stuff_annos)),num_stuffs)
+            annos = []
+            for i in random_indices:
+                annos.append(stuff_annos[i])
             # NOTE: does not support BitMask due to augmentation
             # Current BitMask cannot handle empty objects
+            if len(annos) == 0:
+                return None
             instances = utils.annotations_to_instances(annos, image_shape,  mask_format="bitmask")
             # After transforms such as cropping are applied, the bounding box may no longer
             # tightly bound the object. As an example, imagine a triangle object
@@ -187,19 +216,8 @@ class COCOLVISMultiInstMQCoordsDatasetMapper:
                 
                 # Make smaller object in front in case of overlapping masks
                 
-                # instances.gt_masks.tensor
+                mask_areas = torch.sum(instances.gt_masks.tensor, (1,2))
                 gt_masks = instances.gt_masks.tensor.to(dtype=torch.uint8)
-                if gt_masks.shape[0] == 1:
-                    num_masks = 1
-                else:
-                    #Take 75% masks as the foreground masks
-                    num_masks = min(int(gt_masks.shape[0]*(0.70)), 30)
-              
-                random_indices = random.sample(range(gt_masks.shape[0]),num_masks)
-                gt_masks = gt_masks[random_indices]
-
-                # mask_areas = torch.sum(instances.gt_masks.tensor, (1,2))
-                mask_areas = torch.sum(gt_masks, (1,2))
                 gt_masks =  gt_masks[sorted(range(len(mask_areas)),key=mask_areas.__getitem__,reverse=True)]
 
                 instance_map = torch.zeros((gt_masks.shape[-2:]), dtype=torch.int16)
@@ -225,8 +243,6 @@ class COCOLVISMultiInstMQCoordsDatasetMapper:
                 all_masks = dataset_dict["padding_mask"].int()
                 # filterd_gt_masks = []
                 new_instances = Instances(image_size=image_shape)
-                
-                # new_gt_classes = instances.gt_classes[random_indices]
 
                 new_gt_classes = [0]*gt_masks.shape[0]
                 # new_gt_boxes = instances.gt_masks.get_bounding_boxes()[random_indices]

@@ -136,6 +136,48 @@ def get_gt_clicks_coords_eval(masks, max_num_points=1, ignore_masks=None, radius
         fg_point_masks.append(torch.from_numpy(np.stack(point_masks_per_obj, axis=0)).to(torch.uint8))
     return num_scrbs_per_mask, fg_coords_list, None, fg_point_masks, None
 
+def get_gt_clicks_coords_eval_orig(masks, image_shape, max_num_points=1, ignore_masks=None,
+                                   radius_size=5, first_click_center=True, t= 0, 
+                                   unique_timestamp=False, use_point_features=False):
+
+    """
+    :param masks: numpy array of shape I x H x W
+    :param patch_size: size of patch (int)
+    """
+    # assert all_masks is not None
+    masks = np.asarray(masks).astype(np.uint8)
+    if ignore_masks is not None:
+        not_ignores_mask = np.logical_not(np.asarray(ignore_masks, dtype=np.bool_))
+
+    I, H, W = masks.shape
+    trans_h, trans_w = image_shape
+    ratio_h = trans_h/H
+    ratio_w = trans_w/W
+    num_scrbs_per_mask = [0]*I
+    fg_coords_list = []
+    fg_point_masks = []
+    for i, (_m) in enumerate(masks):
+        coords = []
+        point_masks_per_obj = []
+        if first_click_center:
+            if ignore_masks is not None:
+                _m = np.logical_and(_m, not_ignores_mask[i]).astype(np.uint8)
+            center_coords = get_max_dt_point_mask(_m, max_num_pts=max_num_points)
+            # center_coords.append(t)
+            if not use_point_features:
+                _pm = create_circular_mask(H, W, centers=[center_coords], radius=radius_size)
+                point_masks_per_obj.append(_pm)
+            coords.append([center_coords[0]*ratio_h, center_coords[1]*ratio_w, t])
+            if unique_timestamp:
+                t+=1
+            num_scrbs_per_mask[i]+=1 
+        fg_coords_list.append(coords)
+        if not use_point_features:
+            fg_point_masks.append(torch.from_numpy(np.stack(point_masks_per_obj, axis=0)).to(torch.uint8))
+        # else:
+        #     fg_point_masks = None
+    return num_scrbs_per_mask, fg_coords_list, None, fg_point_masks, None
+
 def get_next_coords_bg_eval(all_fp, device, not_clicked_map ,fg_click_map, bg_click_map, radius = 3, strategy = 0):
 
     H,W = all_fp.shape

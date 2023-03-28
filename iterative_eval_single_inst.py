@@ -56,6 +56,7 @@ from mask2former import (
     COCOMultiInstStuffMultiQueriesClicksDatasetMapper,
     COCOSingleInstMultiQueriesStuffClicksDatasetMapper,
     COCOMvalCoordsDatasetMapper,
+    COCOMvalCoordsV1DatasetMapper,
     DAVISSBDMQCoordsEvalMapper,
     COCOEvalMQCoordsMapper
 )
@@ -91,6 +92,7 @@ class Trainer(DefaultTrainer):
         if dataset_name in ["GrabCut", "Berkeley", "coco_Mval", "davis_single_inst", "davis585"]:
             # mapper = COCOMvalDatasetMapper(cfg, False)
             mapper = COCOMvalCoordsDatasetMapper(cfg,False)
+            #mapper = COCOMvalCoordsV1DatasetMapper(cfg,False)
             return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
         elif dataset_name in ["davis_2017_val", "sbd_single_inst", "sbd_multi_insts"]:
             # mapper = DAVIS17DetmClicksDatasetMapper(cfg, False)
@@ -254,11 +256,11 @@ class Trainer(DefaultTrainer):
                 for s in range(1,2):
                     # model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + f"_S{s}"
                     model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + cfg.MODEL.WEIGHTS.split("/")[-1][5:-4] + f"_S{s}"
-                    if cfg.ITERATIVE.TRAIN.USE_ARGMAX:
-                        model_name += "_pf_from_ps"
+                    #if cfg.ITERATIVE.TRAIN.USE_ARGMAX:
+                    #    model_name += "_V1"
                     results_i = get_avg_noc(model, data_loader, cfg, iou_threshold = iou,
                                             dataset_name=dataset_name,sampling_strategy=s,
-                                            max_interactions=max_interactions,normalize_time=False)
+                                            max_interactions=max_interactions,normalize_time=True)
                     results_i = comm.gather(results_i, dst=0)  # [res1:dict, res2:dict,...]
                     if comm.is_main_process():
                         # sum the values with same keys

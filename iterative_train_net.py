@@ -50,6 +50,7 @@ from detectron2.evaluation import (
 # MaskFormer
 from mask2former import (
     COCOLVISMultiInstMQCoordsDatasetMapper,
+    COCOLVISMultiInstStuffMQCoordsDatasetMapper,
     COCOLVISSingleInstMQCoordsDatasetMapper,
     DAVIS17DetmClicksDatasetMapper,
     COCOLVISMultiInstMQClicksDatasetMapper,
@@ -125,6 +126,9 @@ class Trainer(DefaultTrainer):
             return build_detection_train_loader(cfg, mapper=mapper)
         elif datset_mapper_name == "coco_lvis_single_inst_stuff_coords_mq":
             mapper = COCOLVISSingleInstMQCoordsDatasetMapper(cfg,True)
+            return build_detection_train_loader(cfg, mapper=mapper)
+        elif datset_mapper_name == "coco_lvis_stuff_V1":
+            mapper = COCOLVISMultiInstStuffMQCoordsDatasetMapper(cfg,True)
             return build_detection_train_loader(cfg, mapper=mapper)
         else:
             mapper = None
