@@ -293,6 +293,12 @@ class MSDeformAttnPixelDecoder(nn.Module):
         self.lateral_convs = lateral_convs[::-1]
         self.output_convs = output_convs[::-1]
 
+        # if self.refine_mask_features:
+        #     self.refine = nn.ModuleList()
+        #     for channel in range(len(self.feature_channels)):
+        #         self.refine.append(nn.Conv2d(
+        #             conv_dim, conv_dim, 3, stride=1, padding=1
+        #         ))
         if self.refine_mask_features:
             self.refine = nn.ModuleList()
             for channel in range(len(self.feature_channels)-1):
@@ -365,6 +371,12 @@ class MSDeformAttnPixelDecoder(nn.Module):
                 multi_scale_features.append(o)
                 num_cur_levels += 1
 
+        # if self.refine_mask_features:
+        #     out[-1] = self.mask_features(out[-1])
+        #     refined_mask_features = self.fuse_features(out[::-1][:4])
+        #     return refined_mask_features, out[0], multi_scale_features
+        # else:
+        #     return self.mask_features(out[-1]), out[0], multi_scale_features
         if self.refine_mask_features:
             # out[-1] = self.mask_features(out[-1])
             refined_mask_features = self.fuse_features(out[::-1][1:4])
