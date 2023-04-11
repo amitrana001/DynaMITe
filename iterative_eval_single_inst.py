@@ -49,16 +49,7 @@ from detectron2.evaluation import (
 # from mask2former.evaluation.iterative_evaluator import iterative_inference_on_dataset
 # MaskFormer
 from mask2former import (
-    COCOLVISMultiInstMQCoordsDatasetMapper,
-    DAVIS17DetmClicksDatasetMapper,
-    COCOLVISMultiInstMQClicksDatasetMapper,
-    COCOLVISSingleInstMQClicksDatasetMapper,
-    COCOMultiInstStuffMultiQueriesClicksDatasetMapper,
-    COCOSingleInstMultiQueriesStuffClicksDatasetMapper,
-    COCOMvalCoordsDatasetMapper,
-    COCOMvalCoordsV1DatasetMapper,
-    DAVISSBDMQCoordsEvalMapper,
-    COCOEvalMQCoordsMapper
+    EvaluationDatasetMapper,
 )
 
 from mask2former import (
@@ -88,45 +79,17 @@ class Trainer(DefaultTrainer):
 
     @classmethod
     def build_test_loader(cls,cfg,dataset_name):
-        # evaluation_dataset = cfg.DATASETS.TEST[0]
-        if dataset_name in ["GrabCut", "Berkeley", "coco_Mval", "davis_single_inst", "davis585"]:
-            # mapper = COCOMvalDatasetMapper(cfg, False)
-            mapper = COCOMvalCoordsDatasetMapper(cfg,False)
-            #mapper = COCOMvalCoordsV1DatasetMapper(cfg,False)
-            return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
-        elif dataset_name in ["davis_2017_val", "sbd_single_inst", "sbd_multi_insts"]:
-            # mapper = DAVIS17DetmClicksDatasetMapper(cfg, False)
-            mapper = DAVISSBDMQCoordsEvalMapper(cfg,False)
-            return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
-        elif dataset_name == "coco_2017_val":
-            mapper = COCOEvalMQCoordsMapper(cfg,False)
-            
-            return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
-        else:
-            return None
+      
+        assert dataset_name in ["GrabCut","Berkeley", "coco_Mval", "davis_single_inst", "sbd_single_inst"]
+           
+        mapper = EvaluationDatasetMapper(cfg,False,dataset_name)
+        return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
+        
         
     @classmethod
     def build_train_loader(cls, cfg):
-        datset_mapper_name = cfg.INPUT.DATASET_MAPPER_NAME
-        from mask2former.utils.equal_num_instances_batch import build_detection_train_loader_equal
-        if datset_mapper_name == "multi_instances_clicks_stuffs_mq":
-            mapper = COCOMultiInstStuffMultiQueriesClicksDatasetMapper(cfg,True)
-            return build_detection_train_loader_equal(cfg, mapper=mapper)
-        elif datset_mapper_name == "single_instance_clicks_stuffs_mq":
-            mapper = COCOSingleInstMultiQueriesStuffClicksDatasetMapper(cfg,True)
-            return build_detection_train_loader_equal(cfg, mapper=mapper)
-        elif datset_mapper_name == "coco_lvis_single_inst_stuff_mq":
-            mapper = COCOLVISSingleInstMQClicksDatasetMapper(cfg,True)
-            return build_detection_train_loader_equal(cfg, mapper=mapper)
-        elif datset_mapper_name == "coco_lvis_multi_insts_stuff_mq":
-            mapper = COCOLVISMultiInstMQClicksDatasetMapper(cfg,True)
-            return build_detection_train_loader_equal(cfg, mapper=mapper)
-        elif datset_mapper_name == "coco_lvis_multi_insts_stuff_coords_mq":
-            mapper = COCOLVISMultiInstMQCoordsDatasetMapper(cfg,True)
-            return build_detection_train_loader(cfg, mapper=mapper)
-        else:
-            mapper = None
-            return build_detection_train_loader(cfg, mapper=mapper)
+        mapper = None
+        return build_detection_train_loader(cfg, mapper=mapper)
 
     @classmethod
     def build_lr_scheduler(cls, cfg, optimizer):
@@ -242,9 +205,9 @@ class Trainer(DefaultTrainer):
             )
 
         results = OrderedDict()
-        from mask2former.evaluation.single_instance_evaluation_coords import get_avg_noc
-        for dataset_name in ["GrabCut", "Berkeley",  "davis_single_inst", "coco_Mval", 'sbd_single_inst',"davis585"]:
-        # for dataset_name in ["davis_single_inst","coco_Mval"]:
+        from mask2former.inference.single_instance_inference_V1 import get_avg_noc
+        for dataset_name in ["GrabCut", "Berkeley", "davis_single_inst", "coco_Mval", 'sbd_single_inst']:
+        # for dataset_name in ["coco_Mval"]:
             data_loader = cls.build_test_loader(cfg, dataset_name)
             
             evaluator =None
@@ -254,10 +217,9 @@ class Trainer(DefaultTrainer):
             
             for iou in iou_threshold:
                 for s in range(1,2):
-                    # model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + f"_S{s}"
+            
                     model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + cfg.MODEL.WEIGHTS.split("/")[-1][5:-4] + f"_S{s}"
-                    #if cfg.ITERATIVE.TRAIN.USE_ARGMAX:
-                    #    model_name += "_V1"
+                    model_name += "_V1"
                     results_i = get_avg_noc(model, data_loader, cfg, iou_threshold = iou,
                                             dataset_name=dataset_name,sampling_strategy=s,
                                             max_interactions=max_interactions,normalize_time=True)
@@ -270,11 +232,6 @@ class Trainer(DefaultTrainer):
                         for _d in results_i:
                             for k in _d.keys():
                                 res_gathered[k] += _d[k]
-                        # res_gathered = dict(
-                        #     functools.reduce(operator.iconcat,
-                        #                      map(collections.Counter, results_i))
-                        # )
-                        # print_csv_format(res_gathered)
                         log_single_instance(res_gathered, max_interactions=max_interactions,
                                             dataset_name=dataset_name, model_name=model_name,save_summary_stats=False)
 

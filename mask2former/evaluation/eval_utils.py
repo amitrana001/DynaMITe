@@ -12,6 +12,8 @@ from prettytable import PrettyTable
 from detectron2.utils.visualizer import Visualizer
 import torchvision.transforms.functional as F
 from mask2former.data.points.annotation_generator import create_circular_mask, get_max_dt_point_mask
+from offline_summary import get_statistics
+
 def get_palette(num_cls):
     palette = np.zeros(3 * num_cls, dtype=np.int32)
 
@@ -154,9 +156,11 @@ def get_gt_clicks_coords_eval_orig(masks, image_shape, max_num_points=1, ignore_
     ratio_h = trans_h/H
     ratio_w = trans_w/W
     num_scrbs_per_mask = [0]*I
+    orig_fg_coords_list = []
     fg_coords_list = []
     fg_point_masks = []
     for i, (_m) in enumerate(masks):
+        orig_coords = []
         coords = []
         point_masks_per_obj = []
         if first_click_center:
@@ -167,16 +171,18 @@ def get_gt_clicks_coords_eval_orig(masks, image_shape, max_num_points=1, ignore_
             if not use_point_features:
                 _pm = create_circular_mask(H, W, centers=[center_coords], radius=radius_size)
                 point_masks_per_obj.append(_pm)
+            orig_coords.append([center_coords[0], center_coords[1], t])
             coords.append([center_coords[0]*ratio_h, center_coords[1]*ratio_w, t])
             if unique_timestamp:
                 t+=1
-            num_scrbs_per_mask[i]+=1 
+            num_scrbs_per_mask[i]+=1
+        orig_fg_coords_list.append(orig_coords) 
         fg_coords_list.append(coords)
         if not use_point_features:
             fg_point_masks.append(torch.from_numpy(np.stack(point_masks_per_obj, axis=0)).to(torch.uint8))
         # else:
         #     fg_point_masks = None
-    return num_scrbs_per_mask, fg_coords_list, None, fg_point_masks, None
+    return num_scrbs_per_mask, fg_coords_list, None, fg_point_masks, None, orig_fg_coords_list
 
 def get_next_coords_bg_eval(all_fp, device, not_clicked_map ,fg_click_map, bg_click_map, radius = 3, strategy = 0):
 
@@ -410,6 +416,8 @@ def log_single_instance(res, max_interactions, dataset_name, model_name, ablatio
     for _d in res['dataset_iou_list']:
         dataset_iou_list.update(_d)
     
+    assert total_num_instances == len(dataset_iou_list)
+    
     if save_summary_stats:
         if ablation:
             save_summary_path = os.path.join(f"./output/evaluation/ablation/summary/{dataset_name}")
@@ -466,51 +474,12 @@ def log_multi_instance(res, max_interactions, dataset_name, model_name, ablation
     logger = logging.getLogger(__name__)
     total_num_instances = sum(res['total_num_instances'])
     total_num_interactions = sum(res['total_num_interactions'])
-    # num_failed_objects = sum(res['num_failed_objects'])
-    # total_iou = sum(res['total_iou'])
-
+   
     logger.info(
         "Total number of instances: {}, Average num of interactions:{}".format(
             total_num_instances, total_num_interactions / total_num_instances
         )
     )
-    # logger.info(
-    #     "Total number of failed cases: {}, Avg IOU: {}".format(
-    #         num_failed_objects, total_iou / total_num_instances
-    #     )
-    # )
-
-    # header = ['Model Name', 'IOU_thres', 'Avg_NOC', 'NOF', "Avg_IOU", "max_num_iters", "num_inst"]
-    # NOC = np.round(total_num_interactions / total_num_instances, 2)
-    # NCI = sum(res['avg_num_clicks_per_images']) / len(res['avg_num_clicks_per_images'])
-    # NFI = len(res['failed_images_ids'])
-    # Avg_IOU = np.round(total_iou / total_num_instances, 4)
-    # # row = [model_name, NCI, NFI, NOC, num_failed_objects, Avg_IOU, iou_threshold, max_interactions, total_num_instances]
-
-    # table = PrettyTable()
-    # table.field_names = ["dataset", "NCI", "NFI", "NOC", "NFO", "Avg_IOU", "max_interactions", "#samples"]
-    # table.add_row(
-    #     [dataset_name, NCI, NFI, NOC, num_failed_objects, Avg_IOU, max_interactions, total_num_instances])
-
-    # print(table)
-    # # save_stats_path = os.path.join("./output/evaluation", f'{dataset_name}.txt')
-    # if ablation:
-    #     save_stats_path = os.path.join("./output/evaluation/ablation",  f'{dataset_name}.txt')
-    #     os.makedirs("./output/evaluation/ablation", exist_ok=True)
-    # else:
-    #     save_stats_path = os.path.join("./output/evaluation/final", f'{dataset_name}.txt')
-    #     os.makedirs("./output/evaluation/final", exist_ok=True)
-    # if not os.path.exists(save_stats_path):
-    #     # print("No File")
-    #     header = ['Model Name', 'NCI', 'NFI','NOC', 'NFO', "Avg_IOU", 'IOU_thres',"max_num_iters", "num_inst"]
-    #     with open(save_stats_path, 'w') as f:
-    #         writer = csv.writer(f, delimiter= "\t")
-    #         writer.writerow(header)
-    #         # writer.writerow(row)
-
-    # with open(save_stats_path, 'a') as f:
-    #     writer = csv.writer(f, delimiter= "\t")
-    #     writer.writerow(row)
 
     if save_stats_summary:
         summary_stats = {}
@@ -518,14 +487,7 @@ def log_multi_instance(res, max_interactions, dataset_name, model_name, ablation
         summary_stats["dataset"] = dataset_name
         summary_stats["model"] = model_name
         summary_stats["iou_threshold"] = iou_threshold
-        # summary_stats["failed_images_counts"] = NFI
-        # summary_stats["avg_over_total_images"] = NCI
-        # summary_stats["Avg_NOC"] = NOC
-        # summary_stats["Avg_IOU"] = np.round(total_iou / total_num_instances, 4)
-        # summary_stats["num_failed_objects"] = num_failed_objects
-        # summary_stats["failed_images_ids"] = res['failed_images_ids']
-        # summary_stats["failed_objects_areas"] = res['failed_objects_areas']
-        # summary_stats["avg_num_clicks_per_images"] = np.mean(res['avg_num_clicks_per_images'])
+       
         summary_stats["total_computer_time"] = res['total_compute_time_str']
         summary_stats["time_per_intreaction_tranformer_decoder"] = np.mean(
             res['time_per_intreaction_tranformer_decoder']
@@ -559,12 +521,7 @@ def log_multi_instance(res, max_interactions, dataset_name, model_name, ablation
         summary_stats['fg_click_coords_per_image'] =  fg_click_coords_per_image
         summary_stats['bg_click_coords_per_image'] =  bg_click_coords_per_image
 
-        # now = datetime.datetime.now()
-        # # dd/mm/YY H:M:S
-        # dt_string = now.strftime("%d_%m_%Y_%H_%M_%S_")
-        # if per_obj:
-        #     model_name += "_per_obj_"
-        # model_name += dt_string
+        get_statistics(summary_stats)
         if ablation:
             save_summary_path = os.path.join(f"./output/evaluation/ablation/summary/{dataset_name}")
         else:
@@ -572,9 +529,20 @@ def log_multi_instance(res, max_interactions, dataset_name, model_name, ablation
         os.makedirs(save_summary_path, exist_ok=True)
         stats_file = os.path.join(save_summary_path,
                                   f"{model_name}_{max_interactions}.pickle")
-
+        
         with open(stats_file, 'wb') as handle:
             pickle.dump(summary_stats, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    else:
+        summary_stats = {}
+        summary_stats["sampling_strategy"] = f"S_{sampling_strategy}"
+        summary_stats["dataset"] = dataset_name
+        summary_stats["model"] = model_name
+        summary_stats["iou_threshold"] = iou_threshold
+        ious_objects_per_interaction = {}
+        for _d in res['ious_objects_per_interaction']:
+            ious_objects_per_interaction.update(_d)
+        summary_stats["ious_objects_per_interaction"] = ious_objects_per_interaction
+        get_statistics(summary_stats)
 
 def get_summary(dataset_iou_list, max_clicks=20, iou_thres=0.85):
 
@@ -586,11 +554,13 @@ def get_summary(dataset_iou_list, max_clicks=20, iou_thres=0.85):
         vals = per_image_iou_list>=iou_thres
         if np.any(vals):
             num_clicks =  np.argmax(vals) + 1
-            total_iou += per_image_iou_list[num_clicks-1]
+            # total_iou += per_image_iou_list[num_clicks-1]
         else:
+            assert len(vals) == max_clicks
             num_clicks =  max_clicks
-            total_iou += per_image_iou_list[-1]
+            # total_iou += per_image_iou_list[-1]
             failed_objects+=1
+        total_iou += per_image_iou_list[num_clicks-1]
         total_clicks+=num_clicks
     
     return np.round(total_clicks/num_images,2), failed_objects, np.round(total_iou/num_images,4)

@@ -21,7 +21,7 @@ from mask2former.data.scribble.gen_scribble import get_scribble_gt, get_scribble
 from mask2former.data.points.annotation_generator import get_gt_points_determinstic, generate_point_to_blob_masks_eval_deterministic
 from mask2former.data.scribble.gen_scribble import get_scribble_eval, get_scribble_gt_mask
 from .mapper_utils.datamapper_utils import build_transform_gen, convert_coco_poly_to_mask
-from mask2former.evaluation.eval_utils import get_gt_clicks_coords_eval_orig
+from mask2former.evaluation.eval_utils import get_gt_clicks_coords_eval
 import torch.nn.functional as F
 __all__ = ["COCOMvalCoordsV1DatasetMapper"]
 
@@ -124,7 +124,8 @@ class COCOMvalCoordsV1DatasetMapper:
             if hasattr(instances, 'gt_masks'):
                 trans = torchvision.transforms.Resize(image_shape)
                 gt_masks = instances.gt_masks
-                # gt_masks = trans(gt_masks)
+                dataset_dict["orig_gt_masks"] = gt_masks
+                gt_masks = trans(gt_masks)
                 # gt_masks = F.interpolate(gt_masks.unsqueeze(0), (image_shape[0], image_shape[1]), mode='bilinear', align_corners=False)
                 # gt_masks = gt_masks.squeeze(0)
                 new_instances = Instances(image_size=image_shape)
@@ -136,15 +137,17 @@ class COCOMvalCoordsV1DatasetMapper:
                    
                 # gt_masks = gt_masks
                 ignore_masks = None
+                orig_ignore_masks = None
                 if 'ignore_mask' in dataset_dict:
                     ignore_masks = dataset_dict['ignore_mask'].to(device='cpu', dtype = torch.uint8)
-                    # ignore_masks =  trans(ignore_masks)
+                    
+                    ignore_masks =  trans(ignore_masks)
                     # ignore_masks = F.interpolate(ignore_masks.unsqueeze(0), (image_shape[0], image_shape[1]), mode='bilinear', align_corners=False)
                     # ignore_masks = ignore_masks.squeeze(0)
                 # fg_scrbs, num_scrbs_per_mask, coords = get_gt_points_determinstic(gt_masks, max_num_points=1, ignore_masks=ignore_masks)
                 
                 (num_scrbs_per_mask, fg_coords_list, bg_coords_list,
-                fg_point_masks, bg_point_masks) = get_gt_clicks_coords_eval_orig(gt_masks, image_shape, ignore_masks=ignore_masks, unique_timestamp=self.unique_timestamp)
+                fg_point_masks, bg_point_masks) = get_gt_clicks_coords_eval(gt_masks, ignore_masks=ignore_masks, unique_timestamp=self.unique_timestamp)
         
                 dataset_dict["fg_scrbs"] = fg_point_masks
                 dataset_dict["bg_scrbs"] = bg_point_masks

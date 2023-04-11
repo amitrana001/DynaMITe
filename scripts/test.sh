@@ -1,8 +1,5 @@
 #!/bin/bash -x
 
-SUMMARY="/home/rana/Thesis/DynaMITe/output/evaluation/final/summary/"
+PORT=$(shuf -n 1 -i 49152-65535)
 
-for f in $SUMMARY
-do
-   echo "$f"
-done
+echo "$PORT"

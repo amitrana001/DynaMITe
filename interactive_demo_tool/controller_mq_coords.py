@@ -115,6 +115,7 @@ class InteractiveController:
         self.batched_num_scrbs_per_mask = None
         self.batched_fg_coords_list = None
         self.batched_bg_coords_list = None
+        self.batched_max_timestamp = [1]
         # calculate and store multi-scale image features once
         # self.features = None
         # self.mask_features = None
@@ -221,7 +222,7 @@ class InteractiveController:
             self.num_insts, self.features, self.mask_features,
             self.transformer_encoder_features, self.multi_scale_features,
             self.batched_num_scrbs_per_mask, self.batched_fg_coords_list,
-            self.batched_bg_coords_list) = self.predictor(inputs)
+            self.batched_bg_coords_list) = self.predictor(inputs,batched_max_timestamp=self.batched_max_timestamp)
             self.device = self.images.tensor.device
         else:
             (processed_results, outputs, self.images, self.scribbles,
@@ -232,7 +233,8 @@ class InteractiveController:
                                                 self.features, self.mask_features, self.transformer_encoder_features,
                                                 self.multi_scale_features, self.prev_mask_logits,
                                                 self.batched_num_scrbs_per_mask,
-                                                self.batched_fg_coords_list, self.batched_bg_coords_list)
+                                                self.batched_fg_coords_list, self.batched_bg_coords_list,
+                                                batched_max_timestamp=self.batched_max_timestamp)
 
         # self.pred = self.predictor(inputs)[0][0]
         self._result_masks = processed_results[0]['instances'].pred_masks
@@ -272,7 +274,7 @@ class InteractiveController:
         self.batched_fg_coords_list = None
         self.batched_bg_coords_list = None
         self._result_masks = None
-        
+        self.batched_max_timestamp = [1]
         self.p_scrbs = None
         self.n_scrbs = None
         self.fg_scrbs = []
@@ -360,6 +362,50 @@ class InteractiveController:
         point_mask = prepare_scribbles(point_mask, self.images)
         return point_mask
         
+    # def get_visualization(self, alpha_blend=0.3, click_radius=3, reset_clicks=False,show_only_masks=False):
+    #     from detectron2.utils.visualizer import Visualizer
+    #     if self.image is None:
+    #         return None, None
+
+    #     result_masks_for_vis = self.result_masks
+    #     image = np.asarray(copy.deepcopy(self.image))
+    #     if (result_masks_for_vis is None) or (reset_clicks):
+    #         return image, None
+
+    #     result_masks_for_vis = result_masks_for_vis.to(device ='cpu')
+    #     # image = np.asarray(self.image)
+        
+    #     visualizer = Visualizer(image, metadata=None)
+    #     pred_masks = F.resize(result_masks_for_vis.to(dtype=torch.uint8), image.shape[:2])
+    #     c = []
+    #     for i in range(pred_masks.shape[0]):
+    #         # c.append(color_map[2*(i)+2]/255.0)
+    #         c.append(color_map[i]/255.0)
+    #     # pred_masks = np.asarray(pred_masks).astype(np.bool_)
+    #     vis = visualizer.overlay_instances(masks = pred_masks, assigned_colors=c,alpha=alpha_blend)
+    #     # [Optional] prepare labels
+
+    #     image = vis.get_image()
+    #     # # Laminate your image!
+    #     # fig = overlay_masks(image, masks, labels=mask_labels, colors=cmap, mask_alpha=0.5)
+    #     total_colors = len(color_map)-1
+        
+    #     point_clicks_map = np.ones_like(image)*255
+    #     if not show_only_masks:
+    #         if len(self.fg_orig_list):
+    #             for j, fg_coords_per_mask in enumerate(self.fg_orig_list):
+    #                 for i, coords in enumerate(fg_coords_per_mask):
+    #                     color = np.array(color_map[total_colors-5*j-4], dtype=np.uint8)
+    #                     color = ( int (color [ 0 ]), int (color [ 1 ]), int (color [ 2 ])) 
+    #                     image = cv2.circle(image, (int(coords[0]), int(coords[1])), click_radius, tuple(color), -1)
+            
+    #         if len(self.bg_orig_list):
+    #             for i, coords in enumerate(self.bg_orig_list):
+    #                 color = np.array([255,0,0], dtype=np.uint8)
+    #                 color = ( int (color [ 0 ]), int (color [ 1 ]), int (color [ 2 ])) 
+    #                 image = cv2.circle(image, (int(coords[0]), int(coords[1])), click_radius, tuple(color), -1)
+    #     return image, point_clicks_map
+    
     def get_visualization(self, alpha_blend=0.3, click_radius=3, reset_clicks=False,show_only_masks=False):
         from detectron2.utils.visualizer import Visualizer
         if self.image is None:
@@ -373,17 +419,23 @@ class InteractiveController:
         result_masks_for_vis = result_masks_for_vis.to(device ='cpu')
         # image = np.asarray(self.image)
         
-        visualizer = Visualizer(image, metadata=None)
-        pred_masks = F.resize(result_masks_for_vis.to(dtype=torch.uint8), image.shape[:2])
+        # visualizer = Visualizer(image, metadata=None)
+        # print(result_masks_for_vis.shape)
+        # pred_masks = F.resize(result_masks_for_vis.to(dtype=torch.uint8), image.shape[:2])
+        # print(pred_masks.shape)
+        pred_masks =np.asarray(result_masks_for_vis,dtype=np.uint8)
         c = []
         for i in range(pred_masks.shape[0]):
             # c.append(color_map[2*(i)+2]/255.0)
             c.append(color_map[i]/255.0)
         # pred_masks = np.asarray(pred_masks).astype(np.bool_)
-        vis = visualizer.overlay_instances(masks = pred_masks, assigned_colors=c,alpha=alpha_blend)
+        # vis = visualizer.overlay_instances(masks = pred_masks, assigned_colors=c,alpha=alpha_blend)
+
         # [Optional] prepare labels
 
-        image = vis.get_image()
+        # image = vis.get_image()
+        for i in range(pred_masks.shape[0]):
+            image = self.apply_mask(image, pred_masks[i], c[i],alpha_blend)
         # # Laminate your image!
         # fig = overlay_masks(image, masks, labels=mask_labels, colors=cmap, mask_alpha=0.5)
         total_colors = len(color_map)-1
@@ -404,6 +456,10 @@ class InteractiveController:
                     image = cv2.circle(image, (int(coords[0]), int(coords[1])), click_radius, tuple(color), -1)
         return image, point_clicks_map
 
+    def apply_mask(self, image, mask, color, alpha=0.5):
+        for c in range(3):
+            image[:, :, c] = image[:, :, c] * (1 - alpha * mask) + alpha * mask * color[c] * 255
+        return image
 # def get_visualization(image, instances, prev_output=None, batched_fg_coords_list=None,batched_bg_coords_list=None,
 #                   alpha_blend=0.6, num_iter = 0):
 #     import copy

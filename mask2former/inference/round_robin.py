@@ -8,6 +8,7 @@ from contextlib import ExitStack, contextmanager
 
 import numpy as np
 import torch
+import random
 import torchvision
 from collections import defaultdict
 
@@ -15,7 +16,7 @@ from detectron2.utils.colormap import colormap
 from detectron2.utils.comm import get_world_size
 from detectron2.utils.logger import log_every_n_seconds
 from torch import nn
-
+from .clicker import Clicker
 from mask2former.evaluation.eval_utils import prepare_scribbles, get_next_coords_bg_eval, get_next_coords_fg_eval, save_visualization
 from mask2former.utils.train_sampling_utils import compute_fn_iou
 color_map = colormap(rgb=True, maximum=1)
@@ -23,7 +24,8 @@ color_map = colormap(rgb=True, maximum=1)
 
 def evaluate(
     model, data_loader, cfg, dataset_name=None, save_stats_summary =True, 
-    iou_threshold = 0.85, max_interactions = 10, sampling_strategy=0
+    iou_threshold = 0.85, max_interactions = 10, sampling_strategy=0,
+    eval_strategy = "worst", seed_id = 0, normalize_time = True
 ):
     """
     Run model on the data_loader and evaluate the metrics with evaluator.
@@ -71,22 +73,20 @@ def evaluate(
         # variables to get evaluation summary statistics
         total_num_instances = 0
         total_num_interactions = 0
-        num_failed_objects=0
-        total_iou = 0.0
-        failed_images_ids = []
-        total_failed_images = 0
-        avg_num_clicks_per_images = [] #total clikcs for image / total instances in image
-        avg_over_total_images = 0
-        failed_objects_areas = [0] * 201 #binning the object area ratio
-        bin_size = 200
+        
         time_per_image_features = []
         time_per_intreaction_tranformer_decoder = []
         time_per_image_annotation = []
 
         clicked_objects_per_interaction = defaultdict(list)
         ious_objects_per_interaction = defaultdict(list)
-        num_instances_per_image = {}
-
+        object_areas_per_image = {}
+        fg_click_coords_per_image = {}
+        bg_click_coords_per_image = {}
+        # num_instances_per_image = {}
+        
+        # if eval_strategy == "random":
+        random.seed(123456+seed_id)
         start_data_time = time.perf_counter()
         for idx, inputs in enumerate(data_loader):
             if 'bg_mask' not in inputs[0]:
@@ -100,57 +100,38 @@ def evaluate(
 
             start_compute_time = time.perf_counter()
             
-            gt_masks = inputs[0]['instances'].gt_masks.to('cpu')
-            # bg_mask = inputs[0]["bg_mask"].to('cpu')
-            semantic_map = inputs[0]['semantic_map'].to('cpu')
-            # comb_gt_fg_mask = torch.max(gt_masks,dim=0).values
-
-            num_instances, h_t, w_t = gt_masks.shape[:]
+            predictor = Clicker(model, inputs, sampling_strategy, normalize_time=normalize_time)
+            num_instances = predictor.num_instances
             total_num_instances+=num_instances
 
-            num_instances_per_image[f"{inputs[0]['image_id']}_{idx}"] = num_instances
+            object_areas_per_image[f"{inputs[0]['image_id']}_{idx}"] = predictor.get_obj_areas()
+
             # we start with atleast one interaction per instance
             total_num_interactions+=(num_instances)
 
             num_interactions = num_instances
-            # stop_interaction = False
-            ious = [0.0]*num_instances
             num_clicks_per_object = [1]*(num_instances+1) # 1 for background
             num_clicks_per_object[-1] = 0
 
-            radius = 3
             max_iters_for_image = max_interactions * num_instances
-            not_clicked_map = np.ones_like(gt_masks[0], dtype=np.bool)
-
-            if sampling_strategy == 0:
-                # coords = inputs[0]["coords"]
-                for coords_list in inputs[0]['fg_click_coords']:
-                    for coords in coords_list:
-                        not_clicked_map[coords[0], coords[1]] = False
-            elif sampling_strategy == 1:
-                all_scribbles = torch.cat(inputs[0]['fg_scrbs']).to('cpu')
-                point_mask = torch.max(all_scribbles,dim=0).values
-                not_clicked_map[torch.where(point_mask)] = False
-            fg_click_map = bg_click_map = None
 
             start_features_time = time.perf_counter()
-            (processed_results, outputs, images, scribbles,
-            num_insts, features, mask_features,
-            transformer_encoder_features, multi_scale_features,
-            batched_num_scrbs_per_mask,batched_fg_coords_list,
-            batched_bg_coords_list) = model(inputs)
+        
+            ious = predictor.predict()
 
-            orig_device = images.tensor.device
             time_per_image_features.append(time.perf_counter() - start_features_time)
             time_per_image = time.perf_counter() - start_features_time
-            # save_visualization(inputs[0], gt_masks, scribbles[0], save_results_path,  ious[0], num_interactions-1,  alpha_blend=0.6)
-            pred_masks = processed_results[0]['instances'].pred_masks.to('cpu',dtype=torch.uint8)
-            pred_masks = torchvision.transforms.Resize(size = (h_t,w_t))(pred_masks)
-            
-            ious = compute_iou(gt_masks,pred_masks,ious,iou_threshold)
-            # save_visualization(inputs[0], pred_masks, scribbles[0], save_results_path,  ious[0], num_interactions,  alpha_blend=0.6)
-            
+           
             point_sampled = True
+
+            random_indexes = list(range(len(ious)))
+
+            clicked_objects_per_interaction[f"{inputs[0]['image_id']}_{idx}"].append([True]*(num_instances+1))
+            ious_objects_per_interaction[f"{inputs[0]['image_id']}_{idx}"].append(ious)
+
+            curr_sel_obj = -1
+            cont_clicks_per_obj = [1]*num_instances
+            max_cont_clicks = 10
 
             clicked_objects_per_interaction[f"{inputs[0]['image_id']}_{idx}"].append([True]*(num_instances+1))
             ious_objects_per_interaction[f"{inputs[0]['image_id']}_{idx}"].append(ious)
@@ -159,84 +140,55 @@ def evaluate(
                     break
 
                 index_clicked = [False]*(num_instances+1)
-                indexes = torch.topk(torch.tensor(ious), k = len(ious),largest=False).indices
+                
+                if all((iou>=iou_threshold or c >= max_cont_clicks) for iou,c in zip(ious,cont_clicks_per_obj)):
+                    cont_clicks_per_obj = [0]*num_instances
+                    curr_sel_obj = -1
+                    
                 point_sampled = False
-                for i in indexes:
-                    if ious[i]<iou_threshold: # and num_clicks_per_object[i] != max_interactions:
-                        # total_num_interactions+=1
-                        (scrbs, is_fg, obj_index, not_clicked_map, coords,
-                        fg_click_map, bg_click_map) = get_next_click(pred_masks[i], gt_masks[i], semantic_map, not_clicked_map, fg_click_map,
-                                                                    bg_click_map, orig_device, radius, sampling_strategy, padding=True,
-                                                                    )
-                        total_num_interactions+=1
-                        scrbs = prepare_scribbles(scrbs,images)
-                        if obj_index == -1:
-                            if batched_bg_coords_list[0]:
-                                scribbles[0][-1] = torch.cat((scribbles[0][-1],scrbs))
-                                batched_bg_coords_list[0].extend([[coords[0], coords[1],num_interactions]])
-                            else:
-                                scribbles[0][-1] = scrbs
-                                batched_bg_coords_list[0] = [[coords[0], coords[1],num_interactions]]
+                if (curr_sel_obj != -1 and cont_clicks_per_obj[curr_sel_obj] < max_cont_clicks
+                    and ious[curr_sel_obj] < iou_threshold):
+                    obj_index = predictor.get_next_click(refine_obj_index=curr_sel_obj, time_step=num_interactions)
+                    total_num_interactions+=1
+                    
+                    index_clicked[obj_index] = True
+                    num_clicks_per_object[curr_sel_obj]+=1
+                    point_sampled = True
+                    cont_clicks_per_obj[curr_sel_obj]+=1
+                else:
+                    random.shuffle(random_indexes)
+                    indexes = random_indexes
+                    for i in indexes:
+                        if ious[i]<iou_threshold and cont_clicks_per_obj[i] < max_cont_clicks: 
+                            obj_index = predictor.get_next_click(refine_obj_index=i, time_step=num_interactions)
+                            total_num_interactions+=1
+                            
+                            index_clicked[obj_index] = True
                             num_clicks_per_object[i]+=1
                             point_sampled = True
-                            index_clicked[-1] = True
-                        else:
-                            scribbles[0][obj_index] = torch.cat([scribbles[0][obj_index], scrbs], 0)
-                            batched_num_scrbs_per_mask[0][obj_index] += 1
-                            batched_fg_coords_list[0][obj_index].extend([[coords[0], coords[1],num_interactions]])
-                        
-                            num_clicks_per_object[i]+=1
-                            index_clicked[obj_index] = True
-                        point_sampled = True
-                        break
+                            curr_sel_obj = i
+                            # to handle first selected object, since we start with one click per object
+                            temp = cont_clicks_per_obj[curr_sel_obj]+1
+                            cont_clicks_per_obj = [0]*num_instances
+                            cont_clicks_per_obj[curr_sel_obj] = temp
+                            break
                 if point_sampled:
                     num_interactions+=1
                     clicked_objects_per_interaction[f"{inputs[0]['image_id']}_{idx}"].append(index_clicked)
-                    prev_mask_logits=None    
 
                     start_transformer_decoder_time = time.perf_counter()           
-                    (processed_results, outputs, images, scribbles,
-                    num_insts, features, mask_features, transformer_encoder_features,
-                    multi_scale_features, batched_num_scrbs_per_mask, batched_fg_coords_list,
-                    batched_bg_coords_list)= model(inputs, images, scribbles, num_insts,
-                                                features, mask_features, transformer_encoder_features,
-                                                multi_scale_features, prev_mask_logits,
-                                                batched_num_scrbs_per_mask,
-                                                batched_fg_coords_list, batched_bg_coords_list)
+                    ious = predictor.predict()
                     time_per_intreaction_tranformer_decoder.append(time.perf_counter() - start_transformer_decoder_time)
                     time_per_image+=time.perf_counter() - start_transformer_decoder_time
-
-
-                    pred_masks = processed_results[0]['instances'].pred_masks.to('cpu',dtype=torch.uint8)
-                    pred_masks = torchvision.transforms.Resize(size = (h_t,w_t))(pred_masks)
-                    
-                    ious = compute_iou(gt_masks,pred_masks,ious,iou_threshold)
-                    # save_visualization(inputs[0], pred_masks, scribbles[0], save_results_path,  ious[0], num_interactions,  alpha_blend=0.6)
             
                     ious_objects_per_interaction[f"{inputs[0]['image_id']}_{idx}"].append(ious)
+                
                 
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
             time_per_image_annotation.append(time_per_image)
-            avg_num_clicks_per_images.append(num_interactions/num_instances)
-            
-            # if num_interactions >= max_iters_for_image:
-            if any(iou < iou_threshold for iou in ious):
-                # print(inputs[0]["image_id"])
-                failed_images_ids.append(inputs[0]["image_id"])
-                for i, iou in enumerate(ious):
-                    if iou<iou_threshold:
-                        # indx = gt_masks[i].sum()//bin_size
-                        indx = gt_masks[i].sum()/(h_t * w_t)
-                        indx = int(indx*bin_size)
-                        if indx < len(failed_objects_areas):
-                            failed_objects_areas[indx] +=1
-                        else:
-                            failed_objects_areas[-1] += 1
-                        
-                        num_failed_objects+=1
-            for iou in ious:
-                total_iou += iou
+            fg_click_coords_per_image[f"{inputs[0]['image_id']}_{idx}"] = predictor.batched_fg_coords_list[0]
+            bg_click_coords_per_image[f"{inputs[0]['image_id']}_{idx}"] = predictor.batched_bg_coords_list[0]
 
             total_compute_time += time.perf_counter() - start_compute_time
 
@@ -257,8 +209,8 @@ def evaluate(
                         f"Total: {total_seconds_per_iter:.4f} s/iter. "
                         f"Total instances: {total_num_instances}. "
                         f"Average interactions:{(total_num_interactions/total_num_instances):.2f}. "
-                        f"Avg IOU: {(total_iou/total_num_instances):.3f} "
-                        f"Failed Instances: {num_failed_objects} "
+                        # f"Avg IOU: {(total_iou/total_num_instances):.3f} "
+                        # f"Failed Instances: {num_failed_objects} "
                         f"ETA={eta}"
                     ),
                     n=5,
@@ -283,11 +235,6 @@ def evaluate(
 
     results = {'total_num_instances': [total_num_instances],
                'total_num_interactions': [total_num_interactions],
-               'num_failed_objects': [num_failed_objects],
-               'total_iou': [total_iou],
-               'failed_images_ids': failed_images_ids,
-               'failed_objects_areas': failed_objects_areas,
-               'avg_num_clicks_per_images': avg_num_clicks_per_images,
                'total_compute_time_str': total_compute_time_str,
                'iou_threshold': iou_threshold,
                'time_per_intreaction_tranformer_decoder': time_per_intreaction_tranformer_decoder,
@@ -295,7 +242,9 @@ def evaluate(
                'time_per_image_annotation': time_per_image_annotation,
                'clicked_objects_per_interaction': [clicked_objects_per_interaction],
                'ious_objects_per_interaction': [ious_objects_per_interaction],
-               'num_instances_per_image': [num_instances_per_image],
+               'object_areas_per_image': [object_areas_per_image],
+               'fg_click_coords_per_image': [fg_click_coords_per_image],
+               'bg_click_coords_per_image': [bg_click_coords_per_image],
                }
     return results
 
@@ -384,3 +333,42 @@ def get_next_click(pred_mask, gt_mask, semantic_map, not_clicked_map, fg_click_m
     return (torch.from_numpy(pm).to(device, dtype = torch.float).unsqueeze(0),
             is_positive, obj_index, not_clicked_map, sample_locations[0],
             fg_click_map, bg_click_map)
+
+import cv2
+def get_next_clickV1(pred_mask, gt_mask, semantic_map, not_clicked_map, fg_click_map,
+                   bg_click_map, device, radius, sampling_strategy, padding=True,
+):
+    gt_mask = np.asarray(gt_mask, dtype = np.bool_)
+    pred_mask = np.asarray(pred_mask, dtype = np.bool_)
+
+    fn_mask =  np.logical_and(gt_mask, np.logical_not(pred_mask))
+    fp_mask =  np.logical_and(np.logical_not(gt_mask), pred_mask)
+    
+    H, W = gt_mask.shape
+
+    is_fg = fn_mask.sum() > fp_mask.sum()
+    if is_fg:
+        error_mask = np.pad(fn_mask, ((1, 1), (1, 1)), 'constant').astype(np.uint8)
+    else:
+        error_mask = np.pad(fp_mask, ((1, 1), (1, 1)), 'constant').astype(np.uint8)
+
+    error_mask_dt = cv2.distanceTransform(error_mask, cv2.DIST_L2, 5)[1:-1, 1:-1]
+    error_mask_dt = error_mask_dt * not_clicked_map
+    _max_dist = np.max(error_mask_dt)
+    coords_y, coords_x = np.where(error_mask_dt == _max_dist)
+    
+    sample_locations = [[coords_y[0], coords_x[0]]]
+
+    obj_index = semantic_map[coords_y[0]][coords_x[0]] - 1
+    pm = create_circular_mask(H, W, centers=sample_locations, radius=radius)
+    
+    if sampling_strategy == 0:
+        not_clicked_map[coords_y[0], coords_x[0]] = False
+    elif sampling_strategy == 1:
+        not_clicked_map[np.where(pm==1)] = False
+   
+    return (torch.from_numpy(pm).to(device, dtype = torch.float).unsqueeze(0),
+            is_fg, obj_index, not_clicked_map, sample_locations[0],
+            fg_click_map, bg_click_map)
+
+    

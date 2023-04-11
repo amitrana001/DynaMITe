@@ -51,6 +51,7 @@ from detectron2.evaluation import (
 # MaskFormer
 from mask2former import (
     COCOLVISMultiInstMQCoordsDatasetMapper,
+    DAVISSBDMQCoordsV1EvalMapper,
     DAVIS17DetmClicksDatasetMapper,
     COCOLVISMultiInstMQClicksDatasetMapper,
     COCOLVISSingleInstMQClicksDatasetMapper,
@@ -58,7 +59,8 @@ from mask2former import (
     COCOSingleInstMultiQueriesStuffClicksDatasetMapper,
     COCOMvalCoordsDatasetMapper,
     DAVISSBDMQCoordsEvalMapper,
-    COCOEvalMQCoordsMapper
+    COCOEvalMQCoordsMapper,
+    EvaluationDatasetMapper,
 )
 
 from mask2former import (
@@ -95,7 +97,9 @@ class Trainer(DefaultTrainer):
             return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
         elif dataset_name in ["davis_2017_val", "sbd_single_inst", "sbd_multi_insts"]:
             # mapper = DAVIS17DetmClicksDatasetMapper(cfg, False)
-            mapper = DAVISSBDMQCoordsEvalMapper(cfg,False)
+            # mapper = DAVISSBDMQCoordsEvalMapper(cfg,False)
+            # mapper = DAVISSBDMQCoordsV1EvalMapper(cfg,False)
+            mapper = EvaluationDatasetMapper(cfg,False)
             return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
         elif dataset_name == "coco_2017_val":
             mapper = COCOEvalMQCoordsMapper(cfg,False)
@@ -247,16 +251,19 @@ class Trainer(DefaultTrainer):
         normalize_time = cfg.EVALUATION_STRATEGY.NORMALIZE_TIME 
         eval_strategy = cfg.EVALUATION_STRATEGY.TYPE
         model_name = cfg.MODEL.WEIGHTS.split("/")[-2]
-        model_name += f"_{eval_strategy}"
+        model_name += f"_{eval_strategy}_V1"
         # for t in range(1,11):
-        for idx, dataset_name in enumerate(cfg.DATASETS.TEST):
+        # for idx, dataset_name in enumerate(cfg.DATASETS.TEST):
+        for idx,dataset_name in enumerate(["davis_2017_val","sbd_multi_insts","coco_2017_val"]):
             # if cfg.ITERATIVE.TRAIN.USE_ARGMAX:
             #     model_name+="_argmax"
             eval_strategy = cfg.EVALUATION_STRATEGY.TYPE
             data_loader = cls.build_test_loader(cfg, dataset_name)
-            from mask2former.evaluation.multi_instances_evaluation_final import evaluate
+            from mask2former.inference.random_best_worst import evaluate
             if eval_strategy == "max_dt":
                 from mask2former.evaluation.multi_instances_evaluation_final_max_dt import evaluate
+            elif eval_strategy == "wlb":
+                from mask2former.evaluation.multi_instance_evaluation_per_obj_wlb import evaluate
             # if eval_strategy in ["worst", "best"]:
             # model_name += f"_{eval_strategy}"
             if eval_strategy == "random":
@@ -266,11 +273,11 @@ class Trainer(DefaultTrainer):
                 # # if per_obj:
                 # #     model_name += "_per_obj_"
                 # model_name += f"_{dt_string}"
-                model_name+= f"_seed_{seed_id}"
+                model_name+= f"_seed_{seed_id}_V1"
             
             results_i = evaluate(model, data_loader,cfg, dataset_name, sampling_strategy=1,
                                 iou_threshold = 0.85, max_interactions = 10,
-                                eval_strategy = eval_strategy,seed_id=seed_id,normalize_time=normalize_time)
+                                eval_strategy = eval_strategy,seed_id=seed_id,normalize_time=True)
             results_i = comm.gather(results_i, dst=0)  # [res1:dict, res2:dict,...]
             if comm.is_main_process():
                 # sum the values with same keys

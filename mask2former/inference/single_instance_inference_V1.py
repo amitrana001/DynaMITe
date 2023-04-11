@@ -14,7 +14,7 @@ from torch import nn
 from mask2former.evaluation.zoom_in import zoomIn
 from mask2former.data.points.annotation_generator import get_next_click
 from mask2former.evaluation.eval_utils import compute_iou, get_next_click, prepare_scribbles
-
+from .clicker import Clicker
 color_map = colormap(rgb=True, maximum=1)
 
 def get_avg_noc(
@@ -81,57 +81,23 @@ def get_avg_noc(
             start_compute_time = time.perf_counter()
             
             per_image_iou_list = []
-            gt_masks = inputs[0]['instances'].gt_masks.to('cpu')
-            # bg_mask = inputs[0]["bg_mask"].to('cpu')
-            trans_h, trans_w = inputs[0]['image'].shape[-2:]
-            not_clicked_map = np.ones_like(gt_masks[0], dtype=np.bool)
-            if sampling_strategy == 0:
-                # coords = inputs[0]["coords"]
-                coords = inputs[0]['orig_fg_click_coords'][0][0][:2]
-                not_clicked_map[coords[0], coords[1]] = False
-            elif sampling_strategy == 1:
-                point_mask = inputs[0]['fg_scrbs'][0][0].to('cpu')
-                not_clicked_map[torch.where(point_mask)] = False
-            # elif sampling_strategy == 2:
-            fg_click_map = np.asarray(inputs[0]['fg_scrbs'][0][0].to('cpu'),dtype=np.bool_)
-            bg_click_map = np.zeros_like(fg_click_map,dtype=np.bool_)
-
-            num_instances, orig_h, orig_w = gt_masks.shape[:]
-            ratio_h = trans_h/orig_h
-            ratio_w = trans_w/orig_w
-
+            predictor = Clicker(model, inputs, sampling_strategy, normalize_time=normalize_time)
+            num_instances = predictor.num_instances
             total_num_instances+=num_instances
-            
-            # zoom = zoomIn(cfg, gt_masks, inputs, model, expansion_ratio=1.4)
-            ignore_masks = None
-            if 'ignore_mask' in inputs[0]:
-                ignore_masks = inputs[0]['ignore_mask'].to(device='cpu', dtype = torch.uint8)
-                # ignore_masks =  torchvision.transforms.Resize(size = (h_t,w_t))(ignore_masks)
 
             # we start with atleast one interaction per instance
             total_num_interactions+=(num_instances)
 
-            num_interactions = 1
-            ious = [0.0]*num_instances
-            radius = 5
+            num_interactions = num_instances
+            
+            start_features_time = time.perf_counter()
+        
+            ious = predictor.predict()
 
-            batched_max_timestamp = None
-            if normalize_time:
-                batched_max_timestamp= [1]
-                   
-            (processed_results, outputs, images, scribbles,
-            num_insts, features, mask_features,
-            transformer_encoder_features, multi_scale_features,
-            batched_num_scrbs_per_mask,batched_fg_coords_list,
-            batched_bg_coords_list) = model(inputs,batched_max_timestamp=batched_max_timestamp)
-            orig_device = images.tensor.device
-
-            # save_visualization(inputs[0], gt_masks, scribbles[0], save_vis_path,  ious[0], num_interactions-1,  alpha_blend=0.6)
-            pred_masks = processed_results[0]['instances'].pred_masks.to('cpu',dtype=torch.uint8)
-            # pred_masks = torchvision.transforms.Resize(size = (h_t,w_t))(pred_masks)
-
-            ious = compute_iou(gt_masks,pred_masks,ious,iou_threshold,ignore_masks)
-            # save_visualization(inputs[0], pred_masks, scribbles[0], save_vis_path,  ious[0], num_interactions,  alpha_blend=0.6)
+            # time_per_image_features.append(time.perf_counter() - start_features_time)
+            time_per_image = time.perf_counter() - start_features_time
+           
+            # point_sampled = True
             per_image_iou_list.append(ious[0])
             while (num_interactions<max_interactions):
                 
@@ -139,63 +105,21 @@ def get_avg_noc(
                     break
                 # if num_interactions>3:
                 #     radius=5
-                for i,(gt_mask, pred_mask) in enumerate(zip(gt_masks, pred_masks)):
-                    if ious[i] < iou_threshold:
-                        scrbs, is_fg, not_clicked_map, coords, fg_click_map, bg_click_map = get_next_click_V1(pred_mask, gt_mask, not_clicked_map,
-                                                                    radius=radius, device=orig_device,
-                                                                    ignore_mask=ignore_masks[0] if ignore_masks!=None else None,
-                                                                    strategy=sampling_strategy, fg_click_map = fg_click_map,
-                                                                    bg_click_map = bg_click_map
-                                                                )
-
-                        # pt_sampled_dict[inputs[0]['image_id']].append(coords)
-                        total_num_interactions+=1
-                        if normalize_time:
-                            batched_max_timestamp[0]+=1
-                        scrbs = prepare_scribbles(scrbs,images)
-                        if is_fg:
-                            # scribbles[0][i] = torch.cat([scribbles[0][i], scrbs], 0)
-                            batched_num_scrbs_per_mask[0][i] += 1
-                            # last_coords = batched_fg_coords_list[0][i][-1]
-                            # prev_timestamp = last_coords[-1]
-                            # new_timestamp = prev_timestamp +1
-                            batched_fg_coords_list[0][i].extend([[coords[0]*ratio_h, coords[1]*ratio_w, num_interactions]])
-                        else:
-                            # to-do handling of new timestamp 
-                            if batched_bg_coords_list[0]:
-                                # scribbles[0][-1] = torch.cat((scribbles[0][-1],scrbs))
-                                batched_bg_coords_list[0].extend([[coords[0]*ratio_h, coords[1]*ratio_w, num_interactions]])
-                            else:
-                                # scribbles[0][-1] = scrbs
-                                batched_bg_coords_list[0] = [[coords[0]*ratio_h, coords[1]*ratio_w, num_interactions]]
-                prev_mask_logits=None               
-                (processed_results, outputs, images, scribbles,
-                num_insts, features, mask_features, transformer_encoder_features,
-                multi_scale_features, batched_num_scrbs_per_mask, batched_fg_coords_list,
-                batched_bg_coords_list)= model(inputs, images, scribbles, num_insts,
-                                               features, mask_features, transformer_encoder_features,
-                                               multi_scale_features, prev_mask_logits,
-                                               batched_num_scrbs_per_mask,
-                                               batched_fg_coords_list, batched_bg_coords_list,
-                                               batched_max_timestamp = batched_max_timestamp)
-                
-                pred_masks = processed_results[0]['instances'].pred_masks.to('cpu',dtype=torch.uint8)
-                # pred_masks = torchvision.transforms.Resize(size = (h_t,w_t))(pred_masks)
-
-                # if num_interactions>0:
-                #     pred_masks, object_roi = zoom.apply_zoom(coords,inputs, pred_masks, images, scribbles, num_insts,
-                #                                             features, mask_features, transformer_encoder_features,
-                #                                             multi_scale_features, prev_mask_logits,
-                #                                             batched_num_scrbs_per_mask,
-                #                                             batched_fg_coords_list, batched_bg_coords_list,
-                #                                             batched_max_timestamp = batched_max_timestamp)
-                
-                
-                ious = compute_iou(gt_masks,pred_masks,ious,iou_threshold,ignore_masks)
-                per_image_iou_list.append(ious[0])
+                # for i in range(len(ious)):
+                if ious[0] < iou_threshold:
+                    obj_index = predictor.get_next_click(refine_obj_index=0, time_step=num_interactions)
+                    total_num_interactions+=1
+                        
                 num_interactions+=1
-                # save_visualization(inputs[0], pred_masks, scribbles[0], save_vis_path,  ious[0], num_interactions,  alpha_blend=0.6)
+
+                start_transformer_decoder_time = time.perf_counter()           
+                ious = predictor.predict()
+                # time_per_intreaction_tranformer_decoder.append(time.perf_counter() - start_transformer_decoder_time)
+                time_per_image+=time.perf_counter() - start_transformer_decoder_time
             
+                    # ious_objects_per_interaction[f"{inputs[0]['image_id']}_{idx}"].append(ious)
+                per_image_iou_list.append(ious[0])
+               
             dataset_iou_list[f"{inputs[0]['image_id']}_{idx}"] = np.asarray(per_image_iou_list)
             
             if torch.cuda.is_available():

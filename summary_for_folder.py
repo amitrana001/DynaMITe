@@ -1,4 +1,5 @@
 import os
+import pickle
 import argparse
 from offline_summary import get_statistics
 def parse_args():
@@ -13,11 +14,14 @@ def main():
 
     folder_path = args.folder_path
     for f in os.listdir(folder_path):
-        pickle_path = os.path.join(folder_path,f)
-        if args.ablation:
-            get_statistics(pickle_path, ablation=True)
-        else:
-            get_statistics(pickle_path, ablation=False)
+        if 'bs32' in f:
+            pickle_path = os.path.join(folder_path,f)
+            with open(pickle_path, 'rb') as handle:
+                summary_stats= pickle.load(handle)
+            if args.ablation:
+                get_statistics(summary_stats, ablation=True, save_stats_path=folder_path)
+            else:
+                get_statistics(summary_stats, ablation=False, save_stats_path=folder_path)
 
 
 if __name__ == "__main__":

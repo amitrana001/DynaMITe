@@ -5,7 +5,7 @@ import logging
 
 import numpy as np
 import torch
-import torchvision
+
 from detectron2.config import configurable
 from detectron2.data import detection_utils as utils
 from detectron2.data import transforms as T
@@ -17,10 +17,10 @@ from mask2former.data.dataset_mappers.mapper_utils.datamapper_utils import  buil
 
 from mask2former.evaluation.eval_utils import get_gt_clicks_coords_eval
 
-__all__ = ["DAVISSBDMQCoordsEvalMapper"]
+__all__ = ["DAVISSBDMQCoordsV1EvalMapper"]
 
 # This is specifically designed for the COCO dataset.
-class DAVISSBDMQCoordsEvalMapper:
+class DAVISSBDMQCoordsV1EvalMapper:
     """
     A callable which takes a dataset dict in Detectron2 Dataset format,
     and map it into a format used by MaskFormer.
@@ -89,6 +89,7 @@ class DAVISSBDMQCoordsEvalMapper:
 
         # TODO: get padding mask
         # by feeding a "segmentation mask" to the same transforms
+        orig_image_shape = image.shape[:2]
         padding_mask = np.ones(image.shape[:2])
 
         image, transforms = T.apply_transform_gens(self.tfm_gens, image)
@@ -114,7 +115,7 @@ class DAVISSBDMQCoordsEvalMapper:
 
             # USER: Implement additional transformations if you have other types of data
             annos = [
-                utils.transform_instance_annotations(obj, transforms, image_shape)
+                utils.transform_instance_annotations(copy.deepcopy(obj), transforms, image_shape)
                 for obj in dataset_dict.pop("annotations")
                 if obj.get("iscrowd", 0) == 0
             ]
@@ -128,7 +129,20 @@ class DAVISSBDMQCoordsEvalMapper:
             # boxes_area = instances.gt_boxes.area()
             # Need to filter empty instances first (due to augmentation)
             instances = utils.filter_empty_instances(instances)
-            # instances = filter_instances(instances, min_area = 400.0)
+            
+            # orig_annos = [
+            #     utils.transform_instance_annotations(obj, None, orig_image_shape)
+            #     for obj in dataset_dict.pop("annotations")
+            #     if obj.get("iscrowd", 0) == 0
+            # ]
+            # orig_instances = utils.annotations_to_instances(orig_annos, orig_image_shape,  mask_format="bitmask")
+            # orig_instances.gt_boxes = instances.gt_masks.get_bounding_boxes()
+            # # boxes_area = instances.gt_boxes.area()
+            # # Need to filter empty instances first (due to augmentation)
+            # orig_instances = utils.filter_empty_instances(instances)
+
+            # dataset_dict["orig_gt_masks"] = orig_instances.gt_masks.tensor
+            
             
             if len(instances) == 0:
                 # print("here")
@@ -179,12 +193,6 @@ class DAVISSBDMQCoordsEvalMapper:
                     all_masks = torch.logical_or(all_masks, gt_mask)
 
                 # gt_masks = gt_masks.tensor
-               
-                ignore_masks = None
-                if 'ignore_mask' in dataset_dict:
-                    trans = torchvision.transforms.Resize(image_shape)
-                    ignore_masks = dataset_dict['ignore_mask'].to(device='cpu', dtype = torch.uint8)
-                    ignore_masks =  trans(ignore_masks)
                 (num_scrbs_per_mask, fg_coords_list, bg_coords_list,
                 fg_point_masks, bg_point_masks) = get_gt_clicks_coords_eval(new_gt_masks, unique_timestamp = self.unique_timestamp)
         

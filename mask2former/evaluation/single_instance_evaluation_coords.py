@@ -81,6 +81,7 @@ def get_avg_noc(
             start_compute_time = time.perf_counter()
             
             per_image_iou_list = []
+            orig_gt_masks = inputs[0]['orig_gt_masks'].to('cpu')
             gt_masks = inputs[0]['instances'].gt_masks.to('cpu')
             bg_mask = inputs[0]["bg_mask"].to('cpu')
             
@@ -101,16 +102,17 @@ def get_avg_noc(
             
             # zoom = zoomIn(cfg, gt_masks, inputs, model, expansion_ratio=1.4)
             ignore_masks = None
+            orig_ignore_masks = None
             if 'ignore_mask' in inputs[0]:
-                ignore_masks = inputs[0]['ignore_mask'].to(device='cpu', dtype = torch.uint8)
-                ignore_masks =  torchvision.transforms.Resize(size = (h_t,w_t))(ignore_masks)
+                orig_ignore_masks = inputs[0]['ignore_mask'].to(device='cpu', dtype = torch.uint8)
+                ignore_masks =  torchvision.transforms.Resize(size = (h_t,w_t))(orig_ignore_masks)
 
             # we start with atleast one interaction per instance
             total_num_interactions+=(num_instances)
 
             num_interactions = 1
             ious = [0.0]*num_instances
-            radius = 8
+            radius = 3
 
             batched_max_timestamp = None
             if normalize_time:
@@ -125,11 +127,13 @@ def get_avg_noc(
 
             # save_visualization(inputs[0], gt_masks, scribbles[0], save_vis_path,  ious[0], num_interactions-1,  alpha_blend=0.6)
             pred_masks = processed_results[0]['instances'].pred_masks.to('cpu',dtype=torch.uint8)
+            ious = compute_iou(orig_gt_masks,pred_masks,ious,iou_threshold,orig_ignore_masks)
+
             pred_masks = torchvision.transforms.Resize(size = (h_t,w_t))(pred_masks)
 
-            ious = compute_iou(gt_masks,pred_masks,ious,iou_threshold,ignore_masks)
+            # ious = compute_iou(gt_masks,pred_masks,ious,iou_threshold,ignore_masks)
             # save_visualization(inputs[0], pred_masks, scribbles[0], save_vis_path,  ious[0], num_interactions,  alpha_blend=0.6)
-            per_image_iou_list.append(ious[0].item())
+            per_image_iou_list.append(ious[0])
             while (num_interactions<max_interactions):
                 
                 if all(iou >= iou_threshold for iou in ious):
@@ -177,6 +181,7 @@ def get_avg_noc(
                                                batched_max_timestamp = batched_max_timestamp)
                 
                 pred_masks = processed_results[0]['instances'].pred_masks.to('cpu',dtype=torch.uint8)
+                ious = compute_iou(orig_gt_masks,pred_masks,ious,iou_threshold,orig_ignore_masks)
                 pred_masks = torchvision.transforms.Resize(size = (h_t,w_t))(pred_masks)
 
                 # if num_interactions>0:
@@ -188,8 +193,8 @@ def get_avg_noc(
                 #                                             batched_max_timestamp = batched_max_timestamp)
                 
                 
-                ious = compute_iou(gt_masks,pred_masks,ious,iou_threshold,ignore_masks)
-                per_image_iou_list.append(ious[0].item())
+                # ious = compute_iou(gt_masks,pred_masks,ious,iou_threshold,ignore_masks)
+                per_image_iou_list.append(ious[0])
                 num_interactions+=1
                 # save_visualization(inputs[0], pred_masks, scribbles[0], save_vis_path,  ious[0], num_interactions,  alpha_blend=0.6)
             

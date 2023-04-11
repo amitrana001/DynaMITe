@@ -137,15 +137,27 @@ def evaluate(
             batched_max_timestamp = None
             if normalize_time:
                 batched_max_timestamp= [num_instances-1]
+            # if sampling_strategy == 0:
+            #     # coords = inputs[0]["coords"]
+            #     for coords_list in inputs[0]['fg_click_coords']:
+            #         for coords in coords_list:
+            #             not_clicked_map[coords[0], coords[1]] = False
+            # elif sampling_strategy == 1:
+            #     all_scribbles = torch.cat(inputs[0]['fg_scrbs']).to('cpu')
+            #     point_mask = torch.max(all_scribbles,dim=0).values
+            #     not_clicked_map[torch.where(point_mask)] = False
+            trans_h, trans_w = inputs[0]['image'].shape[-2:]
+            not_clicked_map = np.ones_like(gt_masks[0], dtype=np.bool)
             if sampling_strategy == 0:
                 # coords = inputs[0]["coords"]
-                for coords_list in inputs[0]['fg_click_coords']:
-                    for coords in coords_list:
-                        not_clicked_map[coords[0], coords[1]] = False
+                coords = inputs[0]['orig_fg_click_coords'][0][0][:2]
+                not_clicked_map[coords[0], coords[1]] = False
             elif sampling_strategy == 1:
-                all_scribbles = torch.cat(inputs[0]['fg_scrbs']).to('cpu')
-                point_mask = torch.max(all_scribbles,dim=0).values
+                point_mask = inputs[0]['fg_scrbs'][0][0].to('cpu')
                 not_clicked_map[torch.where(point_mask)] = False
+            # elif sampling_strategy == 2:
+            # fg_click_map = np.asarray(inputs[0]['fg_scrbs'][0][0].to('cpu'),dtype=np.bool_)
+            # bg_click_map = np.zeros_like(fg_click_map,dtype=np.bool_)
             fg_click_map = bg_click_map = None
 
             start_features_time = time.perf_counter()

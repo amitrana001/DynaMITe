@@ -45,13 +45,13 @@ color_map = get_palette(80)[1:]
 class SelfAttentionLayer(nn.Module):
 
     def __init__(self, d_model, nhead, dropout=0.0,
-                 activation="relu", normalize_before=False):
+                 activation="relu", normalize_before=False, attn_map=False):
         super().__init__()
         self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
 
         self.norm = nn.LayerNorm(d_model)
         self.dropout = nn.Dropout(dropout)
-
+        self.attn_map = attn_map
         self.activation = _get_activation_fn(activation)
         self.normalize_before = normalize_before
 
@@ -70,11 +70,15 @@ class SelfAttentionLayer(nn.Module):
                      tgt_key_padding_mask: Optional[Tensor] = None,
                      query_pos: Optional[Tensor] = None):
         q = k = self.with_pos_embed(tgt, query_pos)
+        # tgt2, attn_weights = self.self_attn(q, k, value=tgt, attn_mask=tgt_mask,
+        #                       key_padding_mask=tgt_key_padding_mask)
         tgt2 = self.self_attn(q, k, value=tgt, attn_mask=tgt_mask,
                               key_padding_mask=tgt_key_padding_mask)[0]
         tgt = tgt + self.dropout(tgt2)
         tgt = self.norm(tgt)
 
+        # if self.attn_map:
+        #     return tgt, attn_weights
         return tgt
 
     def forward_pre(self, tgt,
@@ -83,10 +87,14 @@ class SelfAttentionLayer(nn.Module):
                     query_pos: Optional[Tensor] = None):
         tgt2 = self.norm(tgt)
         q = k = self.with_pos_embed(tgt2, query_pos)
+        # tgt2, attn_weights = self.self_attn(q, k, value=tgt2, attn_mask=tgt_mask,
+        #                       key_padding_mask=tgt_key_padding_mask)
         tgt2 = self.self_attn(q, k, value=tgt2, attn_mask=tgt_mask,
                               key_padding_mask=tgt_key_padding_mask)[0]
         tgt = tgt + self.dropout(tgt2)
         
+        # if self.attn_map:
+        #     return tgt, attn_weights
         return tgt
 
     def forward(self, tgt,
@@ -103,13 +111,13 @@ class SelfAttentionLayer(nn.Module):
 class CrossAttentionLayer(nn.Module):
 
     def __init__(self, d_model, nhead, dropout=0.0,
-                 activation="relu", normalize_before=False):
+                 activation="relu", normalize_before=False, attn_map=False):
         super().__init__()
         self.multihead_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
 
         self.norm = nn.LayerNorm(d_model)
         self.dropout = nn.Dropout(dropout)
-
+        self.attn_map = attn_map
         self.activation = _get_activation_fn(activation)
         self.normalize_before = normalize_before
 
@@ -128,6 +136,10 @@ class CrossAttentionLayer(nn.Module):
                      memory_key_padding_mask: Optional[Tensor] = None,
                      pos: Optional[Tensor] = None,
                      query_pos: Optional[Tensor] = None):
+        # tgt2, attn_weights = self.multihead_attn(query=self.with_pos_embed(tgt, query_pos),
+        #                            key=self.with_pos_embed(memory, pos),
+        #                            value=memory, attn_mask=memory_mask,
+        #                            key_padding_mask=memory_key_padding_mask)
         tgt2 = self.multihead_attn(query=self.with_pos_embed(tgt, query_pos),
                                    key=self.with_pos_embed(memory, pos),
                                    value=memory, attn_mask=memory_mask,
@@ -135,6 +147,8 @@ class CrossAttentionLayer(nn.Module):
         tgt = tgt + self.dropout(tgt2)
         tgt = self.norm(tgt)
         
+        # if self.attn_map:
+        #     return tgt, attn_weights
         return tgt
 
     def forward_pre(self, tgt, memory,
@@ -143,12 +157,19 @@ class CrossAttentionLayer(nn.Module):
                     pos: Optional[Tensor] = None,
                     query_pos: Optional[Tensor] = None):
         tgt2 = self.norm(tgt)
+        # tgt2, attn_weights = self.multihead_attn(query=self.with_pos_embed(tgt2, query_pos),
+        #                            key=self.with_pos_embed(memory, pos),
+        #                            value=memory, attn_mask=memory_mask,
+        #                            key_padding_mask=memory_key_padding_mask)
+
         tgt2 = self.multihead_attn(query=self.with_pos_embed(tgt2, query_pos),
                                    key=self.with_pos_embed(memory, pos),
                                    value=memory, attn_mask=memory_mask,
                                    key_padding_mask=memory_key_padding_mask)[0]
         tgt = tgt + self.dropout(tgt2)
 
+        # if self.attn_map:
+        #     return tgt, attn_weights
         return tgt
 
     def forward(self, tgt, memory,

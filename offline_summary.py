@@ -1,4 +1,4 @@
-from mask2former.data.datasets.register_coco_mval_multi_insts import *
+#from mask2former.data.datasets.register_coco_mval_multi_insts import *
 from detectron2.data import DatasetCatalog, MetadataCatalog
 import debugpy
 import pickle
@@ -9,9 +9,9 @@ import argparse
 
 import torch
 
-def get_statistics(pickle_path, ablation = False):
-    with open(pickle_path, 'rb') as handle:
-        summary_stats= pickle.load(handle)
+def get_statistics(summary_stats, ablation = False, save_stats_path=None):
+    # with open(pickle_path, 'rb') as handle:
+    #     summary_stats= pickle.load(handle)
     
     model_name =  summary_stats["model"] 
     dataset_name = summary_stats["dataset"]
@@ -70,8 +70,11 @@ def get_statistics(pickle_path, ablation = False):
         save_stats_path = os.path.join("./output/evaluation/ablation/summary",  f'{dataset_name}.txt')
         os.makedirs("./output/evaluation/ablation/summary", exist_ok=True)
     else:
-        save_stats_path = os.path.join("./output/evaluation/final/summary", f'{dataset_name}.txt')
-        os.makedirs("./output/evaluation/final/summary", exist_ok=True)
+        if save_stats_path is not None:
+            save_stats_path = os.path.join(save_stats_path, f'{dataset_name}.txt')
+        else:
+            save_stats_path = os.path.join("./output/evaluation/final/summary", f'{dataset_name}.txt')
+            os.makedirs("./output/evaluation/final/summary", exist_ok=True)
     if not os.path.exists(save_stats_path):
         # print("No File")
         header = ['model', "NCI_all", "NCI_suc", "NFI", "NFO", "Avg_IOU", 'IOU_thres',"max_num_iters", "num_inst"]
@@ -95,10 +98,12 @@ def main():
     args = parse_args()
 
     pickle_path = args.pickle_path
+    with open(pickle_path, 'rb') as handle:
+        summary_stats= pickle.load(handle)
     if args.ablation:
-        get_statistics(pickle_path, ablation=True)
+        get_statistics(summary_stats, ablation=True)
     else:
-        get_statistics(pickle_path, ablation=False)
+        get_statistics(summary_stats, ablation=False)
 
 
 if __name__ == "__main__":
