@@ -10,6 +10,7 @@ def add_maskformer2_config(cfg):
     # NOTE: configs from original maskformer
     # data config
     # select the dataset mapper
+    cfg.SEED = 2091831170
     cfg.INPUT.DATASET_MAPPER_NAME = "mask_former_semantic"
     cfg.INPUT.MIN_AREA_FOR_OBJECT = 500.0
     cfg.INPUT.MIN_AREA_FOR_MASK = 1000.0
@@ -184,6 +185,7 @@ def add_maskformer2_config(cfg):
     # ______________________Reverse Cross Attn____________
     cfg.REVERSE_CROSS_ATTN =CN()
     cfg.REVERSE_CROSS_ATTN.USE_REVERSE_CROSS_ATTN = False
+    cfg.REVERSE_CROSS_ATTN.USE_MLP_REV_ATTN = False
     cfg.REVERSE_CROSS_ATTN.NUM_LAYERS = 5
     cfg.REVERSE_CROSS_ATTN.SCALE_FACTOR = 1.0
     cfg.REVERSE_CROSS_ATTN.USE_ATTN_MASK = False

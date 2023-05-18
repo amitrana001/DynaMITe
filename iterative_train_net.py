@@ -256,7 +256,7 @@ class Trainer(DefaultTrainer):
             evaluator =None
             if dataset_name in ["coco_2017_val", "davis_2017_val", "sbd_multi_insts"]:
                 model_name = cfg.MODEL.WEIGHTS.split("/")[-2]
-                from mask2former.evaluation.multi_instance_evaluation_per_obj_coords import evaluate
+                from mask2former.inference.max_dt import evaluate
                 results_i = evaluate(model, data_loader,cfg, dataset_name)
                 results_i = comm.gather(results_i, dst=0)  # [res1:dict, res2:dict,...]
                 if comm.is_main_process():

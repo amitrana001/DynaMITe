@@ -278,6 +278,7 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
         use_only_time:bool,
         use_argmax: bool,
         use_rev_cross_attn: bool,
+        use_mlp_rev_attn: bool,
         rev_cross_attn_num_layers: int,
         rev_cross_attn_scale: float,
         use_static_bg_queries: bool,
@@ -355,6 +356,7 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
         self.transformer_cross_attention_layers = nn.ModuleList()
         self.transformer_ffn_layers = nn.ModuleList()
 
+        self.use_mlp_rev_attn = use_mlp_rev_attn
         if self.use_rev_cross_attn:
             self.rev_cross_attn_layers = nn.ModuleList()
             for _ in range(self.rev_cross_attn_num_layers):
@@ -362,6 +364,17 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
                     CrossAttentionLayer(
                         d_model=hidden_dim,
                         nhead=nheads,
+                        dropout=0.0,
+                        normalize_before=pre_norm,
+                    )
+                )
+            if self.use_mlp_rev_attn:
+                self.rev_cross_attn_ffn_layers = nn.ModuleList()
+                for _ in range(self.rev_cross_attn_num_layers):
+                    self.rev_cross_attn_ffn_layers.append(
+                        FFNLayer(
+                        d_model=hidden_dim,
+                        dim_feedforward=hidden_dim*2,
                         dropout=0.0,
                         normalize_before=pre_norm,
                     )
@@ -486,6 +499,7 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
 
         # Reverse Cross Attention
         ret["use_rev_cross_attn"] = cfg.REVERSE_CROSS_ATTN.USE_REVERSE_CROSS_ATTN
+        ret["use_mlp_rev_attn"] = cfg.REVERSE_CROSS_ATTN.USE_MLP_REV_ATTN
         ret["rev_cross_attn_num_layers"] = cfg.REVERSE_CROSS_ATTN.NUM_LAYERS
         ret["rev_cross_attn_scale"] = cfg.REVERSE_CROSS_ATTN.SCALE_FACTOR
 
@@ -745,13 +759,23 @@ class SpatioTempM2FTransformerDecoderMQ(nn.Module):
             mask_features = einops.rearrange(mask_features,"B C H W -> (H W) B C")
 
             #output is QxNxC
-            for layer in self.rev_cross_attn_layers:
-                mask_features = layer(
-                    mask_features, output,
-                    memory_mask=None,
-                    memory_key_padding_mask=None, 
-                    pos=query_embed, query_pos=pos_encodings
-                )
+            if self.use_mlp_rev_attn:
+                for i in range(self.rev_cross_attn_num_layers):
+                    mask_features = self.rev_cross_attn_layers[i](
+                        mask_features, output,
+                        memory_mask=None,
+                        memory_key_padding_mask=None, 
+                        pos=query_embed, query_pos=pos_encodings
+                    )
+                    mask_features = self.rev_cross_attn_ffn_layers[i](mask_features)
+            else:
+                for layer in self.rev_cross_attn_layers:
+                    mask_features = layer(
+                        mask_features, output,
+                        memory_mask=None,
+                        memory_key_padding_mask=None, 
+                        pos=query_embed, query_pos=pos_encodings
+                    )
             mask_features = einops.rearrange(mask_features,"(H W) B C -> B C H W", H=H, W=W, B=B).contiguous()
             outputs_class, outputs_mask, attn_mask = self.forward_prediction_heads(output, mask_features, attn_mask_target_size=size_list[(i + 1) % self.num_feature_levels])
             predictions_class.append(outputs_class)
