@@ -1,4 +1,0 @@
-
-#Eval local 
-sbatch -c 4 -t 1-00 -p trtx-lo --gres gpu:2 -o output/evaluation/eval_%A.out scripts/eval_single_inst_multi_gpu_local.sh output/mq_baseline_swin_tiny_per_obj_bs32_ep50/config.yaml output/mq_baseline_swin_tiny_per_obj_bs32_ep50/model_0049999.pth 1
-

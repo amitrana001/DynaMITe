@@ -13,7 +13,7 @@ import torchvision.transforms.functional as F
 from torch.nn import functional as Fn
 from detectron2.utils.colormap import colormap
 # color_map = colormap(rgb=True, maximum=1)
-from dynamite.evaluation.eval_utils import prepare_scribbles
+from dynamite.inference.eval_utils import prepare_scribbles
 
 def get_palette(num_cls):
     palette = np.zeros(3 * num_cls, dtype=np.int32)

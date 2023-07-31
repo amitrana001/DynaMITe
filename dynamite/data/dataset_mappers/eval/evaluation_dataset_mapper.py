@@ -16,7 +16,7 @@ from detectron2.structures.masks import PolygonMasks
 
 from dynamite.data.dataset_mappers.mapper_utils.datamapper_utils import convert_coco_poly_to_mask,  build_transform_gen
 
-from dynamite.evaluation.eval_utils import get_gt_clicks_coords_eval_orig
+from dynamite.inference.eval_utils import get_gt_clicks_coords_eval_orig
 
 __all__ = ["EvaluationDatasetMapper"]
 

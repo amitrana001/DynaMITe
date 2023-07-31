@@ -20,7 +20,6 @@ from detectron2.structures import BitMasks, Instances
 from detectron2.structures.masks import PolygonMasks
 
 from pycocotools import mask as coco_mask
-from dynamite.data.scribble.gen_scribble import get_scribble_eval, get_scribble_gt_mask
 from dynamite.data.dataset_mappers.mapper_utils.click_utils import get_clicks_coords
 from dynamite.data.dataset_mappers.mapper_utils.datamapper_utils import visualization, filter_instances, build_transform_gen
 
