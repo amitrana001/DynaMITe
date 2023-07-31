@@ -4,6 +4,24 @@ import numpy as np
 import cv2
 from mask2former.data.points.annotation_generator import create_circular_mask
 from mask2former.evaluation.eval_utils import prepare_scribbles
+from mask2former.evaluation.eval_utils import save_visualization
+import os
+def get_palette(num_cls):
+    palette = np.zeros(3 * num_cls, dtype=np.int32)
+
+    for j in range(0, num_cls):
+        lab = j
+        i = 0
+
+        while lab > 0:
+            palette[j*3 + 0] |= (((lab >> 0) & 1) << (7-i))
+            palette[j*3 + 1] |= (((lab >> 1) & 1) << (7-i))
+            palette[j*3 + 2] |= (((lab >> 2) & 1) << (7-i))
+            i = i + 1
+            lab >>= 3
+
+    return palette.reshape((-1, 3))
+color_map = get_palette(80)[1:]
 
 class Clicker:
 
@@ -39,6 +57,8 @@ class Clicker:
         self.batched_num_scrbs_per_mask = None
         self.batched_fg_coords_list = None
         self.batched_bg_coords_list = None
+        self.fg_orig_list = []
+        self.bg_orig_list = []
         self._set_gt_info()
         if self.normalize_time:
             self.batched_max_timestamp = [self.num_instances-1]
@@ -64,6 +84,7 @@ class Clicker:
             point_mask = torch.max(all_scribbles,dim=0).values
             self.not_clicked_map[torch.where(point_mask)] = False
         
+        self.fg_orig_list = self.inputs[0]['orig_fg_click_coords']
         self.ignore_masks = None
         self.not_ignore_mask = None
         if 'ignore_mask' in self.inputs[0]:
@@ -149,13 +170,17 @@ class Clicker:
         trans_coords = [coords_y[0]*self.ratio_h, coords_x[0]*self.ratio_w]
         if obj_index == -1:
             if self.batched_bg_coords_list[0]:
+                # self.bg_orig_list.extend([[coords_y[0],coords_x[0],time_step]])
                 self.batched_bg_coords_list[0].extend([[trans_coords[0],trans_coords[1],time_step]])
             else:
+                # self.bg_orig_list[0] = [[coords_y[0], coords_x[0],time_step]]
                 self.batched_bg_coords_list[0] = [[trans_coords[0], trans_coords[1],time_step]]
+            self.bg_orig_list.append([coords_y[0],coords_x[0],time_step])
         else:
             self.batched_num_scrbs_per_mask[0][obj_index] += 1
+            # self.fg_orig_list[0][obj_index].extend([[coords_y[0], coords_x[1],time_step]])
             self.batched_fg_coords_list[0][obj_index].extend([[trans_coords[0], trans_coords[1],time_step]])
-
+            self.fg_orig_list[obj_index].append([coords_y[0], coords_x[0],time_step])
         if self.normalize_time:
             self.batched_max_timestamp[0]+=1          
 
@@ -234,9 +259,64 @@ class Clicker:
                 ious.append(intersection/union)
             return ious
 
-    def get_visualization(self):
-        pass
+    def save_visualization(self, save_results_path, ious=None, num_interactions=None, alpha_blend =0.6, click_radius=3):
+
+        # save_visualization(self.inputs[0], self.pred_masks, self.batched_fg_coords_list[0], self.batched_bg_coords_list[0],
+                                # save_results_path, sum(ious)/len(ious), num_interactions,  alpha_blend=0.6)
+
+        if num_interactions==0:
+            result_masks_for_vis = self.gt_masks
+        else:
+            result_masks_for_vis = self.pred_masks
+
+        image = np.asarray(self.inputs[0]['image'].permute(1,2,0))
+        image = cv2.resize(image, (self.orig_w, self.orig_h))
+
+        result_masks_for_vis = result_masks_for_vis.to(device ='cpu')
     
+        pred_masks =np.asarray(result_masks_for_vis,dtype=np.uint8)
+        c = []
+        for i in range(pred_masks.shape[0]):
+            # c.append(color_map[2*(i)+2]/255.0)
+            c.append(color_map[i]/255.0)
+        # pred_masks = np.asarray(pred_masks).astype(np.bool_)
+        # vis = visualizer.overlay_instances(masks = pred_masks, assigned_colors=c,alpha=alpha_blend)
+
+        # [Optional] prepare labels
+
+        # image = vis.get_image()
+        for i in range(pred_masks.shape[0]):
+            image = self.apply_mask(image, pred_masks[i], c[i],alpha_blend)
+        # # Laminate your image!
+        # fig = overlay_masks(image, masks, labels=mask_labels, colors=cmap, mask_alpha=0.5)
+        total_colors = len(color_map)-1
+        
+        point_clicks_map = np.ones_like(image)*255
+        # if not show_only_masks:
+        if len(self.fg_orig_list) and num_interactions:
+            for j, fg_coords_per_mask in enumerate(self.fg_orig_list):
+                for i, coords in enumerate(fg_coords_per_mask):
+                    color = np.array(color_map[total_colors-5*j-4], dtype=np.uint8)
+                    color = (int (color[0]), int (color[1]), int (color[2])) 
+                    image = cv2.circle(image, (int(coords[1]), int(coords[0])), click_radius, tuple(color), -1)
+        
+        if len(self.bg_orig_list):
+            for i, coords in enumerate(self.bg_orig_list):
+                color = np.array([255,0,0], dtype=np.uint8)
+                color = (int (color[0]), int (color[1]), int (color[2]))
+                image = cv2.circle(image, (int(coords[1]), int(coords[0])), click_radius, tuple(color), -1)
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        # image = cv2.resize(image, (self.inputs[0]["width"],self.inputs[0]["height"]))
+        save_dir = os.path.join(save_results_path, str(self.inputs[0]['image_id']))
+        os.makedirs(save_dir, exist_ok=True)
+        iou_val = np.round(sum(ious)/len(ious),4)*100
+        cv2.imwrite(os.path.join(save_dir, f"tau_{num_interactions}_{iou_val}.jpg"), image)
+    
+    def apply_mask(self, image, mask, color, alpha=0.5):
+        for c in range(3):
+            image[:, :, c] = image[:, :, c] * (1 - alpha * mask) + alpha * mask * color[c] * 255
+        return image
+
     def get_obj_areas(self):
         obj_areas = np.zeros(self.num_instances)
         for i in range(self.num_instances):
