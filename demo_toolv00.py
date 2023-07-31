@@ -9,7 +9,7 @@ import cv2
 import os
 from detectron2.data import transforms as T
 from detectron2.projects.deeplab import add_deeplab_config
-from mask2former.config import add_maskformer2_config, add_hrnet_config
+from dynamite.config import add_maskformer2_config, add_hrnet_config
 from detectron2.config import get_cfg
 
 from interactive_demo_tool.app import InteractiveDemoApp

@@ -36,7 +36,7 @@ from detectron2.engine import (
     default_setup,
     launch,
 )
-from mask2former.evaluation.single_instance_evaluation import get_avg_noc
+from dynamite.evaluation.single_instance_evaluation import get_avg_noc
 
 from detectron2.projects.deeplab import add_deeplab_config, build_lr_scheduler
 from detectron2.solver.build import maybe_add_gradient_clipping
@@ -48,7 +48,7 @@ from detectron2.evaluation import (
 
 # from mask2former.evaluation.iterative_evaluator import iterative_inference_on_dataset
 # MaskFormer
-from mask2former import (
+from dynamite import (
     COCOLVISMultiInstMQCoordsDatasetMapper,
     COCOLVISMultiInstStuffMQCoordsDatasetMapper,
     COCOLVISSingleInstMQCoordsDatasetMapper,
@@ -62,14 +62,14 @@ from mask2former import (
     COCOEvalMQCoordsMapper
 )
 
-from mask2former import (
+from dynamite import (
     COCOMvalDatasetMapper,
     SemanticSegmentorWithTTA,
     add_maskformer2_config,
     add_hrnet_config
 )
 
-from mask2former.evaluation.eval_utils import log_single_instance, log_multi_instance
+from dynamite.evaluation.eval_utils import log_single_instance, log_multi_instance
 
 class Trainer(DefaultTrainer):
     """
@@ -108,7 +108,7 @@ class Trainer(DefaultTrainer):
     @classmethod
     def build_train_loader(cls, cfg):
         datset_mapper_name = cfg.INPUT.DATASET_MAPPER_NAME
-        from mask2former.utils.equal_num_instances_batch import build_detection_train_loader_equal
+        from dynamite.utils.equal_num_instances_batch import build_detection_train_loader_equal
         if datset_mapper_name == "multi_instances_clicks_stuffs_mq":
             mapper = COCOMultiInstStuffMultiQueriesClicksDatasetMapper(cfg,True)
             return build_detection_train_loader_equal(cfg, mapper=mapper)
@@ -256,7 +256,7 @@ class Trainer(DefaultTrainer):
             evaluator =None
             if dataset_name in ["coco_2017_val", "davis_2017_val", "sbd_multi_insts"]:
                 model_name = cfg.MODEL.WEIGHTS.split("/")[-2]
-                from mask2former.inference.max_dt import evaluate
+                from dynamite.inference.max_dt import evaluate
                 results_i = evaluate(model, data_loader,cfg, dataset_name)
                 results_i = comm.gather(results_i, dst=0)  # [res1:dict, res2:dict,...]
                 if comm.is_main_process():
@@ -272,7 +272,7 @@ class Trainer(DefaultTrainer):
             else:
                 max_interactions = 20
                 iou_threshold = [0.90]
-                from mask2former.evaluation.single_instance_evaluation_coords import get_avg_noc
+                from dynamite.evaluation.single_instance_evaluation_coords import get_avg_noc
                 for iou in iou_threshold:
                     for s in range(3):
                         # model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + f"_S{s}"

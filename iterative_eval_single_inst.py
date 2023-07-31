@@ -36,7 +36,7 @@ from detectron2.engine import (
     default_setup,
     launch,
 )
-from mask2former.evaluation.single_instance_evaluation import get_avg_noc
+from dynamite.evaluation.single_instance_evaluation import get_avg_noc
 
 from detectron2.projects.deeplab import add_deeplab_config, build_lr_scheduler
 from detectron2.solver.build import maybe_add_gradient_clipping
@@ -48,18 +48,18 @@ from detectron2.evaluation import (
 
 # from mask2former.evaluation.iterative_evaluator import iterative_inference_on_dataset
 # MaskFormer
-from mask2former import (
+from dynamite import (
     EvaluationDatasetMapper,
 )
 
-from mask2former import (
+from dynamite import (
     COCOMvalDatasetMapper,
     SemanticSegmentorWithTTA,
     add_maskformer2_config,
     add_hrnet_config
 )
 
-from mask2former.evaluation.eval_utils import log_single_instance, log_multi_instance
+from dynamite.evaluation.eval_utils import log_single_instance, log_multi_instance
 
 class Trainer(DefaultTrainer):
     """
@@ -205,7 +205,7 @@ class Trainer(DefaultTrainer):
             )
 
         results = OrderedDict()
-        from mask2former.inference.single_instance_inference_V1 import get_avg_noc
+        from dynamite.inference.single_instance_inference_V1 import get_avg_noc
         for dataset_name in ["GrabCut", "Berkeley", "davis_single_inst", "coco_Mval", 'sbd_single_inst']:
         # for dataset_name in ["coco_Mval"]:
             data_loader = cls.build_test_loader(cfg, dataset_name)

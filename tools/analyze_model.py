@@ -27,7 +27,7 @@ import sys
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
 # fmt: on
 
-from mask2former import add_maskformer2_config
+from dynamite import add_maskformer2_config
 
 logger = logging.getLogger("detectron2")
 

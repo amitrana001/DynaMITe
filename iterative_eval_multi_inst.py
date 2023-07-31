@@ -37,7 +37,7 @@ from detectron2.engine import (
     default_setup,
     launch,
 )
-from mask2former.evaluation.single_instance_evaluation import get_avg_noc
+from dynamite.evaluation.single_instance_evaluation import get_avg_noc
 
 from detectron2.projects.deeplab import add_deeplab_config, build_lr_scheduler
 from detectron2.solver.build import maybe_add_gradient_clipping
@@ -48,17 +48,17 @@ from detectron2.evaluation import (
 )
 
 # MaskFormer
-from mask2former import (
+from dynamite import (
     EvaluationDatasetMapper,
 )
 
-from mask2former import (
+from dynamite import (
     SemanticSegmentorWithTTA,
     add_maskformer2_config,
     add_hrnet_config
 )
 
-from mask2former.evaluation.eval_utils import log_single_instance, log_multi_instance
+from dynamite.evaluation.eval_utils import log_single_instance, log_multi_instance
 
 class Trainer(DefaultTrainer):
     """
@@ -209,13 +209,13 @@ class Trainer(DefaultTrainer):
         normalize_time = cfg.EVALUATION_STRATEGY.NORMALIZE_TIME 
         eval_strategy = cfg.EVALUATION_STRATEGY.TYPE
         if eval_strategy in ["random", "best", "worst"]:
-            from mask2former.inference.random_best_worst import evaluate
+            from dynamite.inference.random_best_worst import evaluate
         elif eval_strategy == "max_dt":
-            from mask2former.inference.max_dt import evaluate
+            from dynamite.inference.max_dt import evaluate
         elif eval_strategy == "wlb":
-            from mask2former.inference.wlb import evaluate
+            from dynamite.inference.wlb import evaluate
         elif eval_strategy == "round_robin":
-            from mask2former.inference.round_robin import evaluate
+            from dynamite.inference.round_robin import evaluate
 
         model_name = cfg.MODEL.WEIGHTS.split("/")[-2]
         model_name += f"_{eval_strategy}_V1"

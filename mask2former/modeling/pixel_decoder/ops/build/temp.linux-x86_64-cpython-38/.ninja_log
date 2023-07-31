@@ -1,4 +1,0 @@
-# ninja log v5
-1	5945	1664446497000000000	/rwthfs/rz/cluster/hpcwork/qn313466/InteractiveM2F/mask2former/modeling/pixel_decoder/ops/build/temp.linux-x86_64-cpython-38/rwthfs/rz/cluster/hpcwork/qn313466/InteractiveM2F/mask2former/modeling/pixel_decoder/ops/src/cpu/ms_deform_attn_cpu.o	d89a0f7d806d5d2a
-1	16225	1664446508000000000	/rwthfs/rz/cluster/hpcwork/qn313466/InteractiveM2F/mask2former/modeling/pixel_decoder/ops/build/temp.linux-x86_64-cpython-38/rwthfs/rz/cluster/hpcwork/qn313466/InteractiveM2F/mask2former/modeling/pixel_decoder/ops/src/cuda/ms_deform_attn_cuda.o	b639a542f675a5a6
-1	24840	1664446516000000000	/rwthfs/rz/cluster/hpcwork/qn313466/InteractiveM2F/mask2former/modeling/pixel_decoder/ops/build/temp.linux-x86_64-cpython-38/rwthfs/rz/cluster/hpcwork/qn313466/InteractiveM2F/mask2former/modeling/pixel_decoder/ops/src/vision.o	6d7b849b91eac2b
