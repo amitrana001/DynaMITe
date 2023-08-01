@@ -15,7 +15,7 @@ from detectron2.modeling import SEM_SEG_HEADS_REGISTRY
 from detectron2.utils.memory import retry_if_cuda_oom
 from detectron2.structures import Boxes, ImageList, Instances, BitMasks
 
-from ..transformer_decoder import build_transformer_decoder
+from ..interactive_transformer import build_transformer_decoder
 from ..pixel_decoder.fpn import build_pixel_decoder
 
 @SEM_SEG_HEADS_REGISTRY.register()
@@ -91,38 +91,27 @@ class DynamiteHead(nn.Module):
             ),
         }
 
-    def forward(self, data, targets, images, features, num_instances, mask=None, scribbles=None,
-                mask_features=None, transformer_encoder_features=None, 
-                multi_scale_features=None, prev_mask_logits=None, batched_num_scrbs_per_mask=None,
-                batched_fg_coords_list = None, batched_bg_coords_list = None, batched_max_timestamp=None):
+    def forward(self, data, images, features, num_instances, mask_features=None,
+                multi_scale_features=None, batched_num_scrbs_per_mask=None,
+                batched_fg_coords_list = None, batched_bg_coords_list = None, 
+                batched_max_timestamp=None):
         
-        return self.layers(data, targets, images, features, num_instances, mask, scribbles, mask_features,
-                transformer_encoder_features, multi_scale_features, prev_mask_logits,
-                batched_num_scrbs_per_mask, batched_fg_coords_list, batched_bg_coords_list,  batched_max_timestamp)
+    #     return self.layers(data,  images, features, num_instances, mask_features,
+    #             multi_scale_features, batched_num_scrbs_per_mask,
+    #             batched_fg_coords_list, batched_bg_coords_list,  batched_max_timestamp)
 
-    def layers(self, data, targets, images, features, num_instances, mask=None, scribbles=None,
-               mask_features=None, transformer_encoder_features=None, 
-               multi_scale_features=None, prev_mask_logits=None,batched_num_scrbs_per_mask=None,
-               batched_fg_coords_list = None, batched_bg_coords_list = None,  batched_max_timestamp=None):
+    # def layers(self, data, images, features, num_instances,
+    #            mask_features=None, multi_scale_features=None, batched_num_scrbs_per_mask=None,
+    #            batched_fg_coords_list = None, batched_bg_coords_list = None,  batched_max_timestamp=None):
         
         if (mask_features is None) or (multi_scale_features is None):
-            mask_features, transformer_encoder_features, multi_scale_features = self.pixel_decoder.forward_features(features)
+            mask_features, _, multi_scale_features = self.pixel_decoder.forward_features(features)
 
         if self.transformer_in_feature == "multi_scale_pixel_decoder":
-            predictions, batched_num_scrbs_per_mask = self.predictor(data, targets, images, num_instances, multi_scale_features,
-                                        mask_features, mask, scribbles, prev_mask_logits, batched_num_scrbs_per_mask,
-                                        batched_fg_coords_list, batched_bg_coords_list,batched_max_timestamp)
-        else:
-            if self.transformer_in_feature == "transformer_encoder":
-                assert (
-                    transformer_encoder_features is not None
-                ), "Please use the TransformerEncoderPixelDecoder."
-                predictions = self.predictor(transformer_encoder_features, mask_features, mask)
-            elif self.transformer_in_feature == "pixel_embedding":
-                predictions = self.predictor(mask_features, mask_features, mask)
-            else:
-                predictions = self.predictor(features[self.transformer_in_feature], mask_features, mask)
+            predictions, batched_num_scrbs_per_mask = self.predictor(data, images, num_instances, multi_scale_features,
+                                        mask_features,  batched_num_scrbs_per_mask,
+                                        batched_fg_coords_list, batched_bg_coords_list, batched_max_timestamp)
         if self.training:
             return predictions, batched_num_scrbs_per_mask
         else:
-            return predictions, mask_features, transformer_encoder_features, multi_scale_features, batched_num_scrbs_per_mask
+            return predictions, mask_features,  multi_scale_features, batched_num_scrbs_per_mask

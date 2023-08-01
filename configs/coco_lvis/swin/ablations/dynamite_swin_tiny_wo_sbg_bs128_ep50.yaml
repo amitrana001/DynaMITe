@@ -42,6 +42,6 @@ SOLVER:
 DATASETS:
   TRAIN: ("coco_lvis_2017_train",)
 INPUT:
-  DATASET_MAPPER_NAME: "coco_lvis_multi_insts_stuff_coords_mq"
+  DATASET_MAPPER_NAME: "coco_lvis"
 SEED: 2091831170
 VERSION: 2

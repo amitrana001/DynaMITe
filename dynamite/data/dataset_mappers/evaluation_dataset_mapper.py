@@ -14,7 +14,7 @@ from detectron2.data.transforms import TransformGen
 from detectron2.structures import BitMasks, Instances, Boxes, BoxMode
 from detectron2.structures.masks import PolygonMasks
 
-from dynamite.data.dataset_mappers.mapper_utils.datamapper_utils import convert_coco_poly_to_mask,  build_transform_gen
+from dynamite.data.dataset_mappers.utils.datamapper_utils import convert_coco_poly_to_mask,  build_transform_gen
 
 from dynamite.inference.eval_utils import get_gt_clicks_coords_eval_orig
 

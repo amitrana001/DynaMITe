@@ -15,8 +15,8 @@ from detectron2.structures import Boxes, ImageList, Instances, BitMasks
 from detectron2.utils.memory import retry_if_cuda_oom
 
 # from mask2former.evaluation import iterative_evaluator
-from .modeling.final_criterion_v1 import SetFinalCriterion
-from dynamite.utils import get_new_scribbles, preprocess_batch_data
+from .modeling.criterion import SetFinalCriterion
+
 
 @META_ARCH_REGISTRY.register()
 class DynamiteModel(nn.Module):
@@ -184,9 +184,9 @@ class DynamiteModel(nn.Module):
     def device(self):
         return self.pixel_mean.device
 
-    def forward(self, batched_inputs, images=None, scribbles=None, batched_num_instances=None,
-                features=None, mask_features=None, transformer_encoder_features=None, 
-                multi_scale_features=None, prev_mask_logits=None, batched_num_scrbs_per_mask= None,
+    def forward(self, batched_inputs, images=None,  batched_num_instances=None,
+                features=None, mask_features=None, 
+                multi_scale_features=None, batched_num_scrbs_per_mask= None,
                 batched_fg_coords_list = None, batched_bg_coords_list = None, batched_max_timestamp=None):
         """
         Args:
@@ -215,12 +215,12 @@ class DynamiteModel(nn.Module):
         """
         
         if (images is None) or (batched_num_scrbs_per_mask is None) or (batched_fg_coords_list is None):
-            if self.training:
-                (images, scribbles, batched_num_instances, batched_num_scrbs_per_mask,
-                 batched_fg_coords_list, batched_bg_coords_list) = self.preprocess_batch_data(batched_inputs)
-            else:
-                (images, scribbles, batched_num_instances, batched_num_scrbs_per_mask,
-                batched_fg_coords_list, batched_bg_coords_list) = self.preprocess_batch_data(batched_inputs)
+            # if self.training:
+            #     (images, scribbles, batched_num_instances, batched_num_scrbs_per_mask,
+            #      batched_fg_coords_list, batched_bg_coords_list) = self.preprocess_batch_data(batched_inputs)
+            # else:
+            (images, batched_num_instances, batched_num_scrbs_per_mask,
+            batched_fg_coords_list, batched_bg_coords_list) = self.preprocess_batch_data(batched_inputs)
                 # num_instances = batched_num_instances
         if features is None:
             features = self.backbone(images.tensor)
@@ -233,11 +233,9 @@ class DynamiteModel(nn.Module):
             else:
                 targets = None
             
-            outputs, batched_num_scrbs_per_mask = self.sem_seg_head(batched_inputs, gt_instances, images, features, batched_num_instances,
-                                                                    None, scribbles, mask_features, 
-                                                                    transformer_encoder_features, 
-                                                                    multi_scale_features,
-                                                                    prev_mask_logits, batched_num_scrbs_per_mask,
+            outputs, batched_num_scrbs_per_mask = self.sem_seg_head(batched_inputs, images, features, batched_num_instances,
+                                                                    mask_features, multi_scale_features,
+                                                                    batched_num_scrbs_per_mask,
                                                                     batched_fg_coords_list,
                                                                     batched_bg_coords_list,
                                                                 )
@@ -250,30 +248,23 @@ class DynamiteModel(nn.Module):
                     # remove this loss if not specified in `weight_dict`
                     losses.pop(k)
             return losses
-
-            # losses = self.iter_batch_data(batched_inputs, images, num_instances, scribbles, targets)
-            # return losses
+           
         else:
-            gt_instances=None
-            (outputs, mask_features, transformer_encoder_features,
-             multi_scale_features, batched_num_scrbs_per_mask) = self.sem_seg_head(batched_inputs, gt_instances, images, features, batched_num_instances,
-                                                                                    None, scribbles, mask_features, transformer_encoder_features, 
-                                                                                    multi_scale_features, prev_mask_logits, batched_num_scrbs_per_mask,
+            # gt_instances=None
+            (outputs, mask_features, multi_scale_features, batched_num_scrbs_per_mask) = self.sem_seg_head(batched_inputs,  images, features, batched_num_instances,
+                                                                                    mask_features, 
+                                                                                    multi_scale_features, batched_num_scrbs_per_mask,
                                                                                     batched_fg_coords_list, batched_bg_coords_list, batched_max_timestamp)
             processed_results = self.process_results(batched_inputs, images, outputs, batched_num_instances, batched_num_scrbs_per_mask)
             if self.iterative_evaluation:
-                return (processed_results, outputs, images, scribbles, batched_num_instances, features, mask_features,
-                        transformer_encoder_features, multi_scale_features, batched_num_scrbs_per_mask,
+                return (processed_results, outputs, images,  batched_num_instances, features, mask_features,
+                        multi_scale_features, batched_num_scrbs_per_mask,
                         batched_fg_coords_list, batched_bg_coords_list)
             else:
                 return processed_results
 
     def process_results(self, batched_inputs, images, outputs, num_instances, batched_num_scrbs_per_mask=None):
-        if outputs["pred_logits"] is None:
-            mask_cls_results = [None]*(outputs["pred_masks"].shape[0])
-        else:
-            mask_cls_results = outputs["pred_logits"]
-        # mask_cls_results = outputs["pred_logits"]
+       
         mask_pred_results = outputs["pred_masks"]
         # upsample masks
         mask_pred_results = F.interpolate(
@@ -289,8 +280,8 @@ class DynamiteModel(nn.Module):
             batched_num_scrbs_per_mask = [[1]*inst_per_image for inst_per_image in num_instances]
 
         processed_results = []
-        for mask_cls_result, mask_pred_result, input_per_image, image_size, inst_per_image, num_scrbs_per_mask in zip(
-            mask_cls_results, mask_pred_results, batched_inputs, images.image_sizes, num_instances, batched_num_scrbs_per_mask
+        for mask_pred_result, input_per_image, image_size, inst_per_image, num_scrbs_per_mask in zip(
+            mask_pred_results, batched_inputs, images.image_sizes, num_instances, batched_num_scrbs_per_mask
         ):
             height = input_per_image.get("height", image_size[0])
             width = input_per_image.get("width", image_size[1])
@@ -300,19 +291,10 @@ class DynamiteModel(nn.Module):
                 mask_pred_result = retry_if_cuda_oom(sem_seg_postprocess)(
                     mask_pred_result, image_size, height, width
                 )
-                if mask_cls_result is not None:
-                    mask_cls_result = mask_cls_result.to(mask_pred_result)
-
-            # semantic segmentation inference
-            if self.semantic_on:
-                r = retry_if_cuda_oom(self.semantic_inference)(mask_cls_result, mask_pred_result)
-                if not self.sem_seg_postprocess_before_inference:
-                    r = retry_if_cuda_oom(sem_seg_postprocess)(r, image_size, height, width)
-                processed_results[-1]["sem_seg"] = r
-
+    
             # interactive instance segmentation inference
             if self.instance_on:
-                instance_r = retry_if_cuda_oom(self.interactive_instance_inference)(mask_cls_result, mask_pred_result, inst_per_image, num_scrbs_per_mask)
+                instance_r = retry_if_cuda_oom(self.interactive_instance_inference)(mask_pred_result, inst_per_image, num_scrbs_per_mask)
                 processed_results[-1]["instances"] = instance_r
 
         return processed_results
@@ -323,37 +305,19 @@ class DynamiteModel(nn.Module):
         images = ImageList.from_tensors(images, self.size_divisibility)
 
         # images: [Bs, 3, H, W]
-        # for scribbles, scribbles are of varying size in a batch
-        # pad the scribbles with combined bg_scribbles to match the size of the maximum scribbles
-        batched_num_scrbs_per_mask = None
         if 'num_scrbs_per_mask' in batched_inputs[0]:
-            batched_num_scrbs_per_mask = []
-            batched_fg_coords_list = []
-            batched_bg_coords_list = []
-            batched_num_instances = []
-            scribbles = []
+            num_scrbs_per_mask = []
+            fg_coords = []
+            bg_coords = []
+            num_instances = []
+
             for x in batched_inputs:
-                batched_num_scrbs_per_mask.append(x['num_scrbs_per_mask'])
-                batched_fg_coords_list.append(x['fg_click_coords'])
-                batched_bg_coords_list.append(x['bg_click_coords'])
-                # fg_scribbles_count.append(x["instances"].gt_masks.shape[0])
-                batched_num_instances.append(len(x['num_scrbs_per_mask']))
-                scribbles_per_image = []
-                for scrbs_per_mask in x['fg_scrbs']:
-                    if self.training:
-                        scribbles_per_image.append(scrbs_per_mask.to(device = images.device))
-                    else:
-                        scribbles_per_image.append(self.prepare_scribbles(scrbs_per_mask.to(device = images.device),images))
-                if x['bg_scrbs'] is not None:
-                    if self.training:
-                        scribbles_per_image.append(x['bg_scrbs'].to(device = images.device))
-                    else:
-                        scribbles_per_image.append(self.prepare_scribbles(x['bg_scrbs'].to(device = images.device),images))
-                else:
-                    scribbles_per_image.append(None)
-                scribbles.append(scribbles_per_image)
+                num_scrbs_per_mask.append(x['num_scrbs_per_mask'])
+                fg_coords.append(x['fg_click_coords'])
+                bg_coords.append(x['bg_click_coords'])
+                num_instances.append(len(x['num_scrbs_per_mask']))
                
-            return images, scribbles, batched_num_instances, batched_num_scrbs_per_mask, batched_fg_coords_list, batched_bg_coords_list
+            return images, num_instances, num_scrbs_per_mask, fg_coords, bg_coords
     
     def prepare_scribbles(self, scribbles,images):
         h_pad, w_pad = images.tensor.shape[-2:]
@@ -379,13 +343,7 @@ class DynamiteModel(nn.Module):
             )
         return new_targets
 
-    def semantic_inference(self, mask_cls, mask_pred):
-        mask_cls = F.softmax(mask_cls, dim=-1)[..., :-1]
-        mask_pred = mask_pred.sigmoid()
-        semseg = torch.einsum("qc,qhw->chw", mask_cls, mask_pred)
-        return semseg
-
-    def interactive_instance_inference(self, mask_cls, mask_pred, num_instances, num_scrbs_per_mask=None):
+    def interactive_instance_inference(self, mask_pred, num_instances, num_scrbs_per_mask=None):
         # mask_pred is already processed to have the same shape as original input
         # print("interactive instance inference")
         image_size = mask_pred.shape[-2:]
@@ -401,38 +359,12 @@ class DynamiteModel(nn.Module):
             temp_out.append(torch.max(m, dim=0).values)
         mask_pred = torch.cat([torch.stack(temp_out),splited_masks[-1]]) # can remove splited_masks[-1] all together
 
-        # flag = True
-        if self.use_argmax:
-            mask_pred = torch.argmax(mask_pred,0)
-            m = []
-            for i in range(num_instances):
-                m.append((mask_pred == i).float())
-            
-            mask_pred = torch.stack(m)
-            result.pred_masks = mask_pred
-        else:
-            mask_pred = mask_pred[:num_instances]
-            result.pred_masks = (mask_pred > 0).float()
-        result.pred_boxes = Boxes(torch.zeros(mask_pred.size(0), 4))
-
-        if mask_cls is None:
-            result.scores = torch.zeros((num_instances))
-            result.pred_classes = torch.zeros((num_instances))
-        else:
-            # [Q, K+1] -> [fg, K]
-            temp_out = []
-            splited_scores = torch.split(mask_cls, num_scrbs_per_mask_copy, dim=0)
-            for m in splited_scores[:-1]:
-                temp_out.append(torch.max(m, dim=0).values)
-            mask_cls = torch.cat([torch.stack(temp_out),splited_scores[-1]])
-
-            scores = F.softmax(mask_cls, dim=-1)[:num_instances, :-1]
-            labels_per_image = scores.argmax(dim=1)
-
-            scores_per_image = scores.max(dim=1)[0]
-            mask_pred = mask_pred[:num_instances]
-            # calculate average mask prob
-            mask_scores_per_image = (mask_pred.sigmoid().flatten(1) * result.pred_masks.flatten(1)).sum(1) / (result.pred_masks.flatten(1).sum(1) + 1e-6)
-            result.scores = scores_per_image * mask_scores_per_image
-            result.pred_classes = labels_per_image
+        mask_pred = torch.argmax(mask_pred,0)
+        m = []
+        for i in range(num_instances):
+            m.append((mask_pred == i).float())
+        
+        mask_pred = torch.stack(m)
+        result.pred_masks = mask_pred
+        
         return result

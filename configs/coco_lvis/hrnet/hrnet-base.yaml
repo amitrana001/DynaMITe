@@ -71,7 +71,7 @@ INPUT:
   MIN_SCALE: 0.1
   MAX_SCALE: 2.0
   FORMAT: "RGB"
-  DATASET_MAPPER_NAME: "coco_lvis_multi_insts_stuff_coords_mq"
+  DATASET_MAPPER_NAME: "coco_lvis"
 TEST:
   EVAL_PERIOD: 400000
 DATALOADER:

@@ -3,8 +3,8 @@ import torch
 import numpy as np
 import cv2
 from dynamite.data.points.annotation_generator import create_circular_mask
-from dynamite.evaluation.eval_utils import prepare_scribbles
-from dynamite.evaluation.eval_utils import save_visualization
+# from dynamite.evaluation.eval_utils import prepare_scribbles
+# from dynamite.evaluation.eval_utils import save_visualization
 import os
 def get_palette(num_cls):
     palette = np.zeros(3 * num_cls, dtype=np.int32)
@@ -44,15 +44,15 @@ class Clicker:
 
         self.device = None
         self.click_counts = 0
-        self.prev_mask_logits = None
+        # self.prev_mask_logits = None
         self.processed_results = None
         self.outputs = None
         self.images=None
-        self.scribbles=None
+        # self.scribbles=None
         self.num_insts = None
         self.features = None
         self.mask_features = None
-        self.transformer_encoder_features = None 
+        # self.transformer_encoder_features = None 
         self.multi_scale_features=None
         self.batched_num_scrbs_per_mask = None
         self.batched_fg_coords_list = None
@@ -94,20 +94,20 @@ class Clicker:
     
     def predict(self):
         if self.features is None:
-            (processed_results, outputs, self.images, self.scribbles,
+            (processed_results, outputs, self.images,
             self.num_insts, self.features, self.mask_features,
-            self.transformer_encoder_features, self.multi_scale_features,
+            self.multi_scale_features,
             self.batched_num_scrbs_per_mask, self.batched_fg_coords_list,
             self.batched_bg_coords_list) = self.model(self.inputs, batched_max_timestamp=self.batched_max_timestamp)
             # self.device = self.images.tensor.device
         else:
-            (processed_results, outputs, self.images, self.scribbles,
+            (processed_results, outputs, self.images, 
             self.num_insts, self.features, self.mask_features,
-            self.transformer_encoder_features, self.multi_scale_features,
+            self.multi_scale_features,
             self.batched_num_scrbs_per_mask, self.batched_fg_coords_list,
-            self.batched_bg_coords_list) = self.model(self.inputs, self.images, self.scribbles, self.num_insts,
-                                                self.features, self.mask_features, self.transformer_encoder_features,
-                                                self.multi_scale_features, self.prev_mask_logits,
+            self.batched_bg_coords_list) = self.model(self.inputs, self.images, self.num_insts,
+                                                self.features, self.mask_features,
+                                                self.multi_scale_features,
                                                 self.batched_num_scrbs_per_mask,
                                                 self.batched_fg_coords_list, self.batched_bg_coords_list,
                                                 batched_max_timestamp = self.batched_max_timestamp)

@@ -20,13 +20,13 @@ from detectron2.structures import BitMasks, Instances
 from detectron2.structures.masks import PolygonMasks
 
 from pycocotools import mask as coco_mask
-from dynamite.data.dataset_mappers.mapper_utils.click_utils import get_clicks_coords
-from dynamite.data.dataset_mappers.mapper_utils.datamapper_utils import visualization, filter_instances, build_transform_gen
+from dynamite.data.dataset_mappers.utils.click_utils import get_clicks_coords
+from dynamite.data.dataset_mappers.utils.datamapper_utils import visualization, filter_instances, build_transform_gen
 
 # from mask2former.data.points.annotation_generator import gen_multi_points_per_mask, generate_point_to_blob_masks
 
 from dynamite.data.points.annotation_generator import create_circular_mask
-__all__ = ["COCOLVISMultiInstMQCoordsDatasetMapper"]
+__all__ = ["COCOLVISDatasetMapper"]
 
 
 def filter_coco_lvis_instances(instances, min_area):
@@ -46,7 +46,7 @@ def filter_coco_lvis_instances(instances, min_area):
     return instances[m]    
 # This is specifically designed for the COCO dataset.
 
-class COCOLVISMultiInstMQCoordsDatasetMapper:
+class COCOLVISDatasetMapper:
     """
     A callable which takes a dataset dict in Detectron2 Dataset format,
     and map it into a format used by MaskFormer.
@@ -243,22 +243,19 @@ class COCOLVISMultiInstMQCoordsDatasetMapper:
                 dataset_dict['semantic_map'] = semantic_map
                 # new_gt_masks = new_gt_masks.unsqueeze(0)
                 # print(new_gt_masks.shape)
-                (num_scrbs_per_mask, fg_coords_list, bg_coords_list,
-                fg_point_masks, bg_point_masks) = get_clicks_coords(gt_masks, all_masks=all_masks,
-                                                                    unique_timestamp = self.unique_timestamp,
-                                                                    use_point_features=self.use_point_features)
+                (num_scrbs_per_mask, fg_coords_list, bg_coords_list) = get_clicks_coords(gt_masks, all_masks=all_masks)
         
-                dataset_dict["fg_scrbs"] = fg_point_masks
-                dataset_dict["bg_scrbs"] = bg_point_masks
+                # dataset_dict["fg_scrbs"] = None
+                # dataset_dict["bg_scrbs"] = None
                 dataset_dict["bg_mask"] = torch.logical_not(all_masks).to(dtype = torch.uint8)
                 dataset_dict["fg_click_coords"] = fg_coords_list
                 dataset_dict["bg_click_coords"] = bg_coords_list
                 dataset_dict["num_scrbs_per_mask"] = num_scrbs_per_mask
-                # print(masks.tensor.dtype)
+
                 # visualization(dataset_dict["image"], new_instances, prev_output=None, batched_fg_coords_list=[fg_coords_list],batched_bg_coords_list=[bg_coords_list])
                 assert len(num_scrbs_per_mask) == new_instances.gt_masks.shape[0]
-                if not self.use_point_features:
-                    assert len(fg_point_masks) == len(num_scrbs_per_mask) 
+                # if not self.use_point_features:
+                #     assert len(fg_point_masks) == len(num_scrbs_per_mask) 
             else:
                 return None
 

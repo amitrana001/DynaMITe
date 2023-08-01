@@ -49,7 +49,7 @@ from detectron2.evaluation import (
 # from mask2former.evaluation.iterative_evaluator import iterative_inference_on_dataset
 # MaskFormer
 from dynamite import (
-    COCOLVISMultiInstMQCoordsDatasetMapper, EvaluationDatasetMapper
+    COCOLVISDatasetMapper, EvaluationDatasetMapper
 )
 
 from dynamite import (
@@ -84,8 +84,8 @@ class Trainer(DefaultTrainer):
     @classmethod
     def build_train_loader(cls, cfg):
         datset_mapper_name = cfg.INPUT.DATASET_MAPPER_NAME
-        if datset_mapper_name == "coco_lvis_multi_insts_stuff_coords_mq":
-            mapper = COCOLVISMultiInstMQCoordsDatasetMapper(cfg,True)
+        if datset_mapper_name == "coco_lvis":
+            mapper = COCOLVISDatasetMapper(cfg,True)
             return build_detection_train_loader(cfg, mapper=mapper)
         else:
             mapper = None

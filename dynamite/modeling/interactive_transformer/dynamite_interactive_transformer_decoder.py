@@ -21,7 +21,7 @@ from detectron2.layers import Conv2d
 from einops import repeat
 from .position_encoding import PositionEmbeddingSine
 from .descriptor_initializer import AvgClicksPoolingInitializer
-from dynamite.utils.train_sampling_utils import get_next_clicks, get_pos_tensor_coords, get_spatiotemporal_embeddings
+from dynamite.utils.train_utils import get_next_clicks, get_pos_tensor_coords, get_spatiotemporal_embeddings
 
 TRANSFORMER_DECODER_REGISTRY = Registry("TRANSFORMER_MODULE")
 TRANSFORMER_DECODER_REGISTRY.__doc__ = """
@@ -491,8 +491,7 @@ class InteractiveTransformerDecoder(nn.Module):
 
         return ret
 
-    def forward(self, data, targets, images, num_instances, x, mask_features, mask = None, scribbles =None,
-                 prev_mask_logits=None, batched_num_scrbs_per_mask=None,
+    def forward(self, data, images, num_instances, x, mask_features, batched_num_scrbs_per_mask=None,
                  batched_fg_coords_list = None, batched_bg_coords_list = None, batched_max_timestamp=None):
         # x is a list of multi-scale feature
         assert len(x) == self.num_feature_levels
@@ -502,7 +501,7 @@ class InteractiveTransformerDecoder(nn.Module):
         size_list = []
 
         # disable mask, it does not affect performance
-        del mask
+        # del mask
 
         for i in range(self.num_feature_levels):
             size_list.append(x[i].shape[-2:])
@@ -529,29 +528,24 @@ class InteractiveTransformerDecoder(nn.Module):
                             batched_max_timestamp.append(batched_fg_coords_list[j][-1][-1][2])
 
                 for i in range(num_iters):
-                    prev_output = self.iterative_batch_forward(x, src, pos, size_list, images, mask_features, scribbles, prev_mask_logits,
-                                                               batched_num_scrbs_per_mask, batched_fg_coords_list, 
+                    prev_output = self.iterative_batch_forward(x, src, pos, size_list, mask_features, batched_fg_coords_list, 
                                                                batched_bg_coords_list, batched_max_timestamp
                     )
-                    prev_mask_logits = prev_output['pred_masks']
+                    # prev_mask_logits = prev_output['pred_masks']
                     processed_results = self.process_results(data, images, prev_output, num_instances, batched_num_scrbs_per_mask)
                                     
-                    next_coords_info = get_next_clicks(data, processed_results,i+1, src[0].device,
-                                                        scribbles, batched_num_scrbs_per_mask,batched_fg_coords_list, batched_bg_coords_list,
-                                                        per_obj_sampling=self.per_obj_sampling, unique_timestamp=self.unique_timestamp,
-                                                        batched_max_timestamp = batched_max_timestamp, use_point_features=self.use_point_features)
+                    next_coords_info = get_next_clicks(data, processed_results,i+1, batched_num_scrbs_per_mask,batched_fg_coords_list, 
+                                                       batched_bg_coords_list, batched_max_timestamp = batched_max_timestamp)
                     
                     
-                    (batched_num_scrbs_per_mask, scribbles, batched_fg_coords_list, batched_bg_coords_list, batched_max_timestamp) = next_coords_info
+                    (batched_num_scrbs_per_mask,  batched_fg_coords_list, batched_bg_coords_list, batched_max_timestamp) = next_coords_info
                        
                         
-            outputs = self.iterative_batch_forward(x, src, pos, size_list, images, mask_features, scribbles,  prev_mask_logits,
-                                                    batched_num_scrbs_per_mask, batched_fg_coords_list, 
+            outputs = self.iterative_batch_forward(x, src, pos, size_list, mask_features, batched_fg_coords_list, 
                                                     batched_bg_coords_list, batched_max_timestamp
                     )
         else:
-            outputs = self.iterative_batch_forward(x, src, pos, size_list, images, mask_features, scribbles, prev_mask_logits,
-                                                   batched_num_scrbs_per_mask, batched_fg_coords_list, batched_bg_coords_list,
+            outputs = self.iterative_batch_forward(x, src, pos, size_list, mask_features, batched_fg_coords_list, batched_bg_coords_list,
                                                    batched_max_timestamp)
         return outputs, batched_num_scrbs_per_mask
 
@@ -582,9 +576,8 @@ class InteractiveTransformerDecoder(nn.Module):
 
         return outputs_class, outputs_mask, attn_mask
 
-    def iterative_batch_forward(self, x, src, pos, size_list, images, mask_features, scribbles =None,
-                                prev_mask_logits=None, batched_num_scrbs_per_mask=None,
-                                batched_fg_coords_list=None, batched_bg_coords_list=None, batched_max_timestamp=None):
+    def iterative_batch_forward(self, x, src, pos, size_list, mask_features, batched_fg_coords_list=None,
+                                 batched_bg_coords_list=None, batched_max_timestamp=None):
 
         _, bs, _ = src[0].shape
         B, C, H, W = mask_features.shape
@@ -720,10 +713,7 @@ class InteractiveTransformerDecoder(nn.Module):
             return [{"pred_masks": b} for b in outputs_seg_masks[:-1]]
     
     def process_results(self, batched_inputs, images, outputs, num_instances, batched_num_scrbs_per_mask=None):
-        if outputs["pred_logits"] is None:
-            mask_cls_results = [None]*(outputs["pred_masks"].shape[0])
-        else:
-            mask_cls_results = outputs["pred_logits"]
+        
         mask_pred_results = outputs["pred_masks"]
         # upsample masks
         mask_pred_results = F.interpolate(
@@ -736,27 +726,23 @@ class InteractiveTransformerDecoder(nn.Module):
         del outputs
         if batched_num_scrbs_per_mask is None:
             batched_num_scrbs_per_mask = [[1]*inst_per_image for inst_per_image in num_instances]
-            # print("here")
-            # batched_num_scrbs_per_mask
-
+            
         processed_results = []
-        for mask_cls_result, mask_pred_result, input_per_image, image_size, inst_per_image, num_scrbs_per_mask in zip(
-            mask_cls_results, mask_pred_results, batched_inputs, images.image_sizes, num_instances, batched_num_scrbs_per_mask
+        for mask_pred_result, input_per_image, image_size, inst_per_image, num_scrbs_per_mask in zip(
+            mask_pred_results, batched_inputs, images.image_sizes, num_instances, batched_num_scrbs_per_mask
         ):
-            # height = input_per_image.get("height", image_size[0])
-            # width = input_per_image.get("width", image_size[1])
+            
             processed_results.append({})
 
             padding_mask = torch.logical_not(input_per_image["padding_mask"]).to(mask_pred_result.device)
             mask_pred_result = mask_pred_result * padding_mask
 
-            instance_r = retry_if_cuda_oom(self.interactive_instance_inference)(mask_cls_result, mask_pred_result,
-                                                                                inst_per_image, num_scrbs_per_mask)
+            instance_r = retry_if_cuda_oom(self.interactive_instance_inference)(mask_pred_result, inst_per_image, num_scrbs_per_mask)
             processed_results[-1]["instances"] = instance_r
 
         return processed_results
 
-    def interactive_instance_inference(self, mask_cls, mask_pred, num_instances, num_scrbs_per_mask=None):
+    def interactive_instance_inference(self, mask_pred, num_instances, num_scrbs_per_mask=None):
         # mask_pred is already processed to have the same shape as original input
         
         import copy
@@ -784,27 +770,5 @@ class InteractiveTransformerDecoder(nn.Module):
         
         mask_pred = torch.stack(m)
         result.pred_masks = mask_pred
-       
-        result.pred_boxes = Boxes(torch.zeros(mask_pred.size(0), 4))
-
-        if mask_cls is None:
-            result.scores = torch.zeros((num_instances))
-            result.pred_classes = torch.zeros((num_instances))
-        else:
-            # [Q, K+1] -> [fg, K]
-            temp_out = []
-            splited_scores = torch.split(mask_cls, num_scrbs_per_mask_copy, dim=0)
-            for m in splited_scores:
-                temp_out.append(torch.max(m, dim=0).values)
-            mask_cls = torch.stack(temp_out)
-
-            scores = F.softmax(mask_cls, dim=-1)[:num_instances, :-1]
-            labels_per_image = scores.argmax(dim=1)
-
-            scores_per_image = scores.max(dim=1)[0]
-            mask_pred = mask_pred[:num_instances]
-            # calculate average mask prob
-            mask_scores_per_image = (mask_pred.sigmoid().flatten(1) * result.pred_masks.flatten(1)).sum(1) / (result.pred_masks.flatten(1).sum(1) + 1e-6)
-            result.scores = scores_per_image * mask_scores_per_image
-            result.pred_classes = labels_per_image
+     
         return result

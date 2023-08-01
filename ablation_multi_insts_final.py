@@ -120,7 +120,7 @@ class Trainer(DefaultTrainer):
         elif datset_mapper_name == "coco_lvis_multi_insts_stuff_mq":
             mapper = COCOLVISMultiInstMQClicksDatasetMapper(cfg,True)
             return build_detection_train_loader_equal(cfg, mapper=mapper)
-        elif datset_mapper_name == "coco_lvis_multi_insts_stuff_coords_mq":
+        elif datset_mapper_name == "coco_lvis":
             mapper = COCOLVISMultiInstMQCoordsDatasetMapper(cfg,True)
             return build_detection_train_loader(cfg, mapper=mapper)
         else:
