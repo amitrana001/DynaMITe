@@ -185,7 +185,7 @@ def gen_multi_points_per_mask(masks, max_num_points=3, radius_size=8, all_masks=
     # masks[masks == void_label] = 0
     
     I, H, W = masks.shape
-    num_scrbs_per_mask = [0]*I
+    num_clicks_per_object = [0]*I
     point_to_blob_masks = []
     for i, (_m) in enumerate(masks):
         sample_locations = point_candidates_dt(_m, max_num_pts=max_num_points)
@@ -198,15 +198,15 @@ def gen_multi_points_per_mask(masks, max_num_points=3, radius_size=8, all_masks=
                 _pm = create_circular_mask(H, W, centers=[loc], radius=radius_size)
                 # all_points_per_mask = np.logical_or(all_points_per_mask, _pm)
                 points_per_mask.append(_pm)
-                num_scrbs_per_mask[i]+=1
+                num_clicks_per_object[i]+=1
             point_to_blob_masks.append(torch.from_numpy(np.stack(points_per_mask, axis=0)).to(torch.float))
             # point_to_blob_masks.insert(0,all_points_per_mask)
-            # num_scrbs_per_mask[i]+=1
+            # num_clicks_per_object[i]+=1
         else:
             return None
             # print("no points")
             # point_to_blob_masks.append(_pm)
-            # num_scrbs_per_mask[i]+=1
+            # num_clicks_per_object[i]+=1
 
     # full_bg_mask = np.logical_not(all_masks).astype(int)
     bg = []
@@ -241,7 +241,7 @@ def gen_multi_points_per_mask(masks, max_num_points=3, radius_size=8, all_masks=
 
     # bg = torch.from_numpy(np.stack(bg, axis=0)).to(dtype=torch.uint8)
     # print(np.unique(masks))
-    return point_to_blob_masks, bg, num_scrbs_per_mask
+    return point_to_blob_masks, bg, num_clicks_per_object
     # raise NotImplementedError("Not implemented yet!!!")
 
 def generate_point_to_blob_masks_eval(masks, max_num_points=3, radius_size=8, all_masks=None):
@@ -314,7 +314,7 @@ def generate_point_to_blob_masks_eval_deterministic(gt_masks, max_num_points=1, 
     gt_masks = np.asarray(gt_masks).astype(np.uint8)
     
     I, H, W = gt_masks.shape
-    num_scrbs_per_mask = [0]*I
+    num_clicks_per_object = [0]*I
     point_to_blob_masks = []
     for i, (_m) in enumerate(gt_masks):
         sample_locations = point_candidates_dt_determinstic(_m, max_num_pts=max_num_points)
@@ -327,10 +327,10 @@ def generate_point_to_blob_masks_eval_deterministic(gt_masks, max_num_points=1, 
                 _pm = create_circular_mask(H, W, centers=[loc], radius=radius_size)
                 # all_points_per_mask = np.logical_or(all_points_per_mask, _pm)
                 points_per_mask.append(_pm)
-                num_scrbs_per_mask[i]+=1
+                num_clicks_per_object[i]+=1
             point_to_blob_masks.append(torch.from_numpy(np.stack(points_per_mask, axis=0)).to(torch.float))
 
-    return point_to_blob_masks, num_scrbs_per_mask
+    return point_to_blob_masks, num_clicks_per_object
 
 
 def get_max_dt_point_mask(mask, max_num_pts=1):
@@ -356,7 +356,7 @@ def get_gt_points_determinstic(gt_masks, max_num_points=1, radius_size=8, ignore
         not_ignores_mask = np.logical_not(np.asarray(ignore_masks, dtype=np.bool_))
     
     I, H, W = gt_masks.shape
-    num_scrbs_per_mask = [0]*I
+    num_clicks_per_object = [0]*I
     point_to_blob_masks = []
     for i, (_m) in enumerate(gt_masks):
         if ignore_masks is not None:
@@ -365,10 +365,10 @@ def get_gt_points_determinstic(gt_masks, max_num_points=1, radius_size=8, ignore
         points_per_mask = []
         _pm = create_circular_mask(H, W, centers=[max_dt_loc], radius=radius_size)
         points_per_mask.append(_pm)
-        num_scrbs_per_mask[i]+=1
+        num_clicks_per_object[i]+=1
         point_to_blob_masks.append(torch.from_numpy(np.stack(points_per_mask, axis=0)).to(torch.float))
 
-    return point_to_blob_masks, num_scrbs_per_mask, max_dt_loc
+    return point_to_blob_masks, num_clicks_per_object, max_dt_loc
 
 def get_iterative_points(pred_mask, gt_mask, device):
 

@@ -122,7 +122,7 @@ def get_avg_noc(
             (processed_results, outputs, images, scribbles,
             num_insts, features, mask_features,
             transformer_encoder_features, multi_scale_features,
-            batched_num_scrbs_per_mask,batched_fg_coords_list,
+            batched_num_clicks_per_object,batched_fg_coords_list,
             batched_bg_coords_list) = model(inputs,batched_max_timestamp=batched_max_timestamp)
             orig_device = images.tensor.device
 
@@ -155,7 +155,7 @@ def get_avg_noc(
                         scrbs = prepare_scribbles(scrbs,images)
                         if is_fg:
                             # scribbles[0][i] = torch.cat([scribbles[0][i], scrbs], 0)
-                            batched_num_scrbs_per_mask[0][i] += 1
+                            batched_num_clicks_per_object[0][i] += 1
                             # last_coords = batched_fg_coords_list[0][i][-1]
                             # prev_timestamp = last_coords[-1]
                             # new_timestamp = prev_timestamp +1
@@ -171,11 +171,11 @@ def get_avg_noc(
                 prev_mask_logits=None               
                 (processed_results, outputs, images, scribbles,
                 num_insts, features, mask_features, transformer_encoder_features,
-                multi_scale_features, batched_num_scrbs_per_mask, batched_fg_coords_list,
+                multi_scale_features, batched_num_clicks_per_object, batched_fg_coords_list,
                 batched_bg_coords_list)= model(inputs, images, scribbles, num_insts,
                                                features, mask_features, transformer_encoder_features,
                                                multi_scale_features, prev_mask_logits,
-                                               batched_num_scrbs_per_mask,
+                                               batched_num_clicks_per_object,
                                                batched_fg_coords_list, batched_bg_coords_list,
                                                batched_max_timestamp = batched_max_timestamp)
                 
@@ -186,7 +186,7 @@ def get_avg_noc(
                 #     pred_masks, object_roi = zoom.apply_zoom(coords,inputs, pred_masks, images, scribbles, num_insts,
                 #                                             features, mask_features, transformer_encoder_features,
                 #                                             multi_scale_features, prev_mask_logits,
-                #                                             batched_num_scrbs_per_mask,
+                #                                             batched_num_clicks_per_object,
                 #                                             batched_fg_coords_list, batched_bg_coords_list,
                 #                                             batched_max_timestamp = batched_max_timestamp)
                 

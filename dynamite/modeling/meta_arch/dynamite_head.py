@@ -17,6 +17,7 @@ from detectron2.structures import Boxes, ImageList, Instances, BitMasks
 
 from ..interactive_transformer import build_transformer_decoder
 from ..pixel_decoder.fpn import build_pixel_decoder
+from ..interactive_transformer.utils import build_interactive_transformer
 
 @SEM_SEG_HEADS_REGISTRY.register()
 class DynamiteHead(nn.Module):
@@ -28,90 +29,69 @@ class DynamiteHead(nn.Module):
         self,
         input_shape: Dict[str, ShapeSpec],
         *,
-        num_classes: int,
         pixel_decoder: nn.Module,
-        loss_weight: float = 1.0,
-        ignore_value: int = -1,
         # extra parameters
-        transformer_predictor: nn.Module,
+        interactive_transformer: nn.Module,
         transformer_in_feature: str,
     ):
         """
         NOTE: this interface is experimental.
         Args:
             input_shape: shapes (channels and stride) of the input features
-            num_classes: number of classes to predict
             pixel_decoder: the pixel decoder module
-            loss_weight: loss weight
-            ignore_value: category id to be ignored during training.
-            transformer_predictor: the transformer decoder that makes prediction
+            transformer_predictor: the interactive transformer that makes prediction
             transformer_in_feature: input feature name to the transformer_predictor
         """
         super().__init__()
         input_shape = sorted(input_shape.items(), key=lambda x: x[1].stride)
         self.in_features = [k for k, v in input_shape]
-        feature_strides = [v.stride for k, v in input_shape]
-        feature_channels = [v.channels for k, v in input_shape]
 
-        self.ignore_value = ignore_value
         self.common_stride = 4
-        self.loss_weight = loss_weight
 
         self.pixel_decoder = pixel_decoder
-        self.predictor = transformer_predictor
+        # self.predictor = transformer_predictor
+        self.interactive_transformer = interactive_transformer
+
         self.transformer_in_feature = transformer_in_feature
 
-        self.num_classes = num_classes
 
     @classmethod
     def from_config(cls, cfg, input_shape: Dict[str, ShapeSpec]):
         # figure out in_channels to transformer predictor
-        if cfg.MODEL.MASK_FORMER.TRANSFORMER_IN_FEATURE == "transformer_encoder":
-            transformer_predictor_in_channels = cfg.MODEL.SEM_SEG_HEAD.CONVS_DIM
-        elif cfg.MODEL.MASK_FORMER.TRANSFORMER_IN_FEATURE == "pixel_embedding":
-            transformer_predictor_in_channels = cfg.MODEL.SEM_SEG_HEAD.MASK_DIM
-        elif cfg.MODEL.MASK_FORMER.TRANSFORMER_IN_FEATURE == "multi_scale_pixel_decoder":  # for maskformer2
-            transformer_predictor_in_channels = cfg.MODEL.SEM_SEG_HEAD.CONVS_DIM
-        else:
-            transformer_predictor_in_channels = input_shape[cfg.MODEL.MASK_FORMER.TRANSFORMER_IN_FEATURE].channels
+        if cfg.MODEL.MASK_FORMER.TRANSFORMER_IN_FEATURE == "multi_scale_pixel_decoder":  # for maskformer2
+            # transformer_predictor_in_channels = cfg.MODEL.SEM_SEG_HEAD.CONVS_DIM
+            interactive_transformer_in_channels = cfg.MODEL.SEM_SEG_HEAD.CONVS_DIM
+
 
         return {
             "input_shape": {
                 k: v for k, v in input_shape.items() if k in cfg.MODEL.SEM_SEG_HEAD.IN_FEATURES
             },
-            "ignore_value": cfg.MODEL.SEM_SEG_HEAD.IGNORE_VALUE,
-            "num_classes": cfg.MODEL.SEM_SEG_HEAD.NUM_CLASSES,
             "pixel_decoder": build_pixel_decoder(cfg, input_shape),
-            "loss_weight": cfg.MODEL.SEM_SEG_HEAD.LOSS_WEIGHT,
             "transformer_in_feature": cfg.MODEL.MASK_FORMER.TRANSFORMER_IN_FEATURE,
-            "transformer_predictor": build_transformer_decoder(
+            "interactive_transformer": build_interactive_transformer(
                 cfg,
-                transformer_predictor_in_channels,
-                mask_classification=True,
+                interactive_transformer_in_channels,
             ),
+            # "transformer_predictor": build_transformer_decoder(
+            #     cfg,
+            #     transformer_predictor_in_channels,
+            # ),
         }
 
     def forward(self, data, images, features, num_instances, mask_features=None,
-                multi_scale_features=None, batched_num_scrbs_per_mask=None,
-                batched_fg_coords_list = None, batched_bg_coords_list = None, 
-                batched_max_timestamp=None):
-        
-    #     return self.layers(data,  images, features, num_instances, mask_features,
-    #             multi_scale_features, batched_num_scrbs_per_mask,
-    #             batched_fg_coords_list, batched_bg_coords_list,  batched_max_timestamp)
-
-    # def layers(self, data, images, features, num_instances,
-    #            mask_features=None, multi_scale_features=None, batched_num_scrbs_per_mask=None,
-    #            batched_fg_coords_list = None, batched_bg_coords_list = None,  batched_max_timestamp=None):
+                multi_scale_features=None, num_clicks_per_object=None,
+                fg_coords = None, bg_coords = None, 
+                max_timestamp=None):
         
         if (mask_features is None) or (multi_scale_features is None):
             mask_features, _, multi_scale_features = self.pixel_decoder.forward_features(features)
 
         if self.transformer_in_feature == "multi_scale_pixel_decoder":
-            predictions, batched_num_scrbs_per_mask = self.predictor(data, images, num_instances, multi_scale_features,
-                                        mask_features,  batched_num_scrbs_per_mask,
-                                        batched_fg_coords_list, batched_bg_coords_list, batched_max_timestamp)
+            predictions, num_clicks_per_object = self.interactive_transformer(data, images, num_instances, multi_scale_features,
+                                        mask_features,  num_clicks_per_object,
+                                        fg_coords, bg_coords, max_timestamp)
         if self.training:
-            return predictions, batched_num_scrbs_per_mask
+            return predictions, num_clicks_per_object
         else:
-            return predictions, mask_features,  multi_scale_features, batched_num_scrbs_per_mask
+            return predictions, mask_features,  multi_scale_features, num_clicks_per_object

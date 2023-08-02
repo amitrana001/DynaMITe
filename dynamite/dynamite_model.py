@@ -31,78 +31,36 @@ class DynamiteModel(nn.Module):
         backbone: Backbone,
         sem_seg_head: nn.Module,
         criterion: nn.Module,
-        num_queries: int,
-        object_mask_threshold: float,
-        overlap_threshold: float,
-        random_bg_queries: bool,
-        iterative_evaluation: bool,
-        class_agnostic: bool,
-        use_argmax: bool,
-        metadata,
         size_divisibility: int,
-        sem_seg_postprocess_before_inference: bool,
         pixel_mean: Tuple[float],
         pixel_std: Tuple[float],
         # inference
-        semantic_on: bool,
-        panoptic_on: bool,
-        instance_on: bool,
-        test_topk_per_image: int,
+        iterative_evaluation: bool,
+        
     ):
         """
         Args:
             backbone: a backbone module, must follow detectron2's backbone interface
             sem_seg_head: a module that predicts semantic segmentation from backbone features
             criterion: a module that defines the loss
-            num_queries: int, number of queries
-            object_mask_threshold: float, threshold to filter query based on classification score
-                for panoptic segmentation inference
-            overlap_threshold: overlap threshold used in general inference for panoptic segmentation
-            metadata: dataset meta, get `thing` and `stuff` category names for panoptic
-                segmentation inference
             size_divisibility: Some backbones require the input height and width to be divisible by a
                 specific integer. We can use this to override such requirement.
-            sem_seg_postprocess_before_inference: whether to resize the prediction back
-                to original input size before semantic segmentation inference or after.
-                For high-resolution dataset like Mapillary, resizing predictions before
-                inference will cause OOM error.
             pixel_mean, pixel_std: list or tuple with #channels element, representing
                 the per-channel mean and std to be used to normalize the input image
-            semantic_on: bool, whether to output semantic segmentation prediction
-            instance_on: bool, whether to output instance segmentation prediction
-            panoptic_on: bool, whether to output panoptic segmentation prediction
-            test_topk_per_image: int, instance segmentation parameter, keep topk instances per image
         """
         super().__init__()
         self.backbone = backbone
         self.sem_seg_head = sem_seg_head
         self.criterion = criterion
-        self.num_queries = num_queries
-        self.overlap_threshold = overlap_threshold
-        self.object_mask_threshold = object_mask_threshold
-        self.metadata = metadata
         if size_divisibility < 0:
             # use backbone size_divisibility if not set
             size_divisibility = self.backbone.size_divisibility
         self.size_divisibility = size_divisibility
-        self.sem_seg_postprocess_before_inference = sem_seg_postprocess_before_inference
         self.register_buffer("pixel_mean", torch.Tensor(pixel_mean).view(-1, 1, 1), False)
         self.register_buffer("pixel_std", torch.Tensor(pixel_std).view(-1, 1, 1), False)
 
         # iterative
         self.iterative_evaluation = iterative_evaluation
-        self.class_agnostic = class_agnostic
-        self.random_bg_queries = random_bg_queries
-
-        self.use_argmax = use_argmax
-        # additional args
-        self.semantic_on = semantic_on
-        self.instance_on = instance_on
-        self.panoptic_on = panoptic_on
-        self.test_topk_per_image = test_topk_per_image
-
-        if not self.semantic_on:
-            assert self.sem_seg_postprocess_before_inference
 
     @classmethod
     def from_config(cls, cfg):
@@ -111,38 +69,28 @@ class DynamiteModel(nn.Module):
 
         # Loss parameters:
         deep_supervision = cfg.MODEL.MASK_FORMER.DEEP_SUPERVISION
-        no_object_weight = cfg.MODEL.MASK_FORMER.NO_OBJECT_WEIGHT
 
         # loss weights
-        class_weight = cfg.MODEL.MASK_FORMER.CLASS_WEIGHT
         dice_weight = cfg.MODEL.MASK_FORMER.DICE_WEIGHT
         mask_weight = cfg.MODEL.MASK_FORMER.MASK_WEIGHT
 
-        # #Iterative Pipeline
-        # iterative_evaluation = cfg.ITERATIVE.INTERACTIVE_EVALAUTION
-        class_agnostic = cfg.ITERATIVE.TRAIN.CLASS_AGNOSTIC
-
+       
         # building criterion
 
-        if class_agnostic:
-            weight_dict = {"loss_mask": mask_weight, "loss_dice": dice_weight}
-            losses = ["masks"]
-        else:
-            weight_dict = {"loss_ce": class_weight, "loss_mask": mask_weight, "loss_dice": dice_weight}
-            losses = ["labels", "masks"]
+        weight_dict = {"loss_mask": mask_weight, "loss_dice": dice_weight}
+        losses = ["masks"]
 
+        
         if deep_supervision:
-            dec_layers = cfg.MODEL.MASK_FORMER.DEC_LAYERS
+            enc_layers = cfg.MODEL.MASK_FORMER.ENC_LAYERS
             aux_weight_dict = {}
-            for i in range(dec_layers - 1):
+            for i in range(enc_layers - 1):
                 aux_weight_dict.update({k + f"_{i}": v for k, v in weight_dict.items()})
             weight_dict.update(aux_weight_dict)
 
 
         criterion = SetFinalCriterion(
-            sem_seg_head.num_classes,
             weight_dict=weight_dict,
-            eos_coef=no_object_weight,
             losses=losses,
             num_points=cfg.MODEL.MASK_FORMER.TRAIN_NUM_POINTS,
             oversample_ratio=cfg.MODEL.MASK_FORMER.OVERSAMPLE_RATIO,
@@ -153,44 +101,26 @@ class DynamiteModel(nn.Module):
             "backbone": backbone,
             "sem_seg_head": sem_seg_head,
             "criterion": criterion,
-            "num_queries": cfg.MODEL.MASK_FORMER.NUM_OBJECT_QUERIES,
-            "object_mask_threshold": cfg.MODEL.MASK_FORMER.TEST.OBJECT_MASK_THRESHOLD,
-            "overlap_threshold": cfg.MODEL.MASK_FORMER.TEST.OVERLAP_THRESHOLD,
-            "metadata": MetadataCatalog.get(cfg.DATASETS.TRAIN[0]),
+
             "size_divisibility": cfg.MODEL.MASK_FORMER.SIZE_DIVISIBILITY,
-            "sem_seg_postprocess_before_inference": (
-                cfg.MODEL.MASK_FORMER.TEST.SEM_SEG_POSTPROCESSING_BEFORE_INFERENCE
-                or cfg.MODEL.MASK_FORMER.TEST.PANOPTIC_ON
-                or cfg.MODEL.MASK_FORMER.TEST.INSTANCE_ON
-            ),
             "pixel_mean": cfg.MODEL.PIXEL_MEAN,
             "pixel_std": cfg.MODEL.PIXEL_STD,
 
-            "use_argmax": cfg.ITERATIVE.TRAIN.USE_ARGMAX,
-
             #iterative
             "iterative_evaluation": cfg.ITERATIVE.TEST.INTERACTIVE_EVALAUTION,
-            "class_agnostic": cfg.ITERATIVE.TRAIN.CLASS_AGNOSTIC,
-            "random_bg_queries": cfg.ITERATIVE.TRAIN.RANDOM_BG_QUERIES,
-
-            # inference
-            "semantic_on": cfg.MODEL.MASK_FORMER.TEST.SEMANTIC_ON,
-            "instance_on": cfg.MODEL.MASK_FORMER.TEST.INSTANCE_ON,
-            "panoptic_on": cfg.MODEL.MASK_FORMER.TEST.PANOPTIC_ON,
-            "test_topk_per_image": cfg.TEST.DETECTIONS_PER_IMAGE,
         }
 
     @property
     def device(self):
         return self.pixel_mean.device
 
-    def forward(self, batched_inputs, images=None,  batched_num_instances=None,
+    def forward(self, inputs, images=None,  num_instances=None,
                 features=None, mask_features=None, 
-                multi_scale_features=None, batched_num_scrbs_per_mask= None,
-                batched_fg_coords_list = None, batched_bg_coords_list = None, batched_max_timestamp=None):
+                multi_scale_features=None, num_clicks_per_object= None,
+                fg_coords = None, bg_coords = None, max_timestamp=None):
         """
         Args:
-            batched_inputs: a list, batched outputs of :class:`DatasetMapper`.
+            inputs: a list, batched outputs of :class:`DatasetMapper`.
                 Each item in the list contains the inputs for one image.
                 For now, each item in the list is a dict that contains:
                    * "image": Tensor, image in (C, H, W) format.
@@ -202,44 +132,30 @@ class DynamiteModel(nn.Module):
             list[dict]:
                 each dict has the results for one image. The dict contains the following keys:
 
-                * "sem_seg":
-                    A Tensor that represents the
-                    per-pixel segmentation prediced by the head.
-                    The prediction has shape KxHxW that represents the logits of
-                    each class for each pixel.
-                * "panoptic_seg":
-                    A tuple that represent panoptic output
-                    panoptic_seg (Tensor): of shape (height, width) where the values are ids for each segment.
-                    segments_info (list[dict]): Describe each segment in `panoptic_seg`.
-                        Each dict contains keys "id", "category_id", "isthing".
         """
         
-        if (images is None) or (batched_num_scrbs_per_mask is None) or (batched_fg_coords_list is None):
-            # if self.training:
-            #     (images, scribbles, batched_num_instances, batched_num_scrbs_per_mask,
-            #      batched_fg_coords_list, batched_bg_coords_list) = self.preprocess_batch_data(batched_inputs)
-            # else:
-            (images, batched_num_instances, batched_num_scrbs_per_mask,
-            batched_fg_coords_list, batched_bg_coords_list) = self.preprocess_batch_data(batched_inputs)
-                # num_instances = batched_num_instances
+        if (images is None) or (num_clicks_per_object is None) or (fg_coords is None):        
+            (images, num_instances, num_clicks_per_object,
+            fg_coords, bg_coords) = self.preprocess_batch_data(inputs)
+                # num_instances = num_instances
         if features is None:
             features = self.backbone(images.tensor)
 
         if self.training:
 
-            if "instances" in batched_inputs[0]:
-                gt_instances = [(x["instances"].to(self.device), x['padding_mask'].to(self.device),x['bg_mask'].to(self.device)) for x in batched_inputs]
+            if "instances" in inputs[0]:
+                gt_instances = [(x["instances"].to(self.device), x['padding_mask'].to(self.device),x['bg_mask'].to(self.device)) for x in inputs]
                 targets = self.prepare_targets(gt_instances, images)
             else:
                 targets = None
             
-            outputs, batched_num_scrbs_per_mask = self.sem_seg_head(batched_inputs, images, features, batched_num_instances,
+            outputs, num_clicks_per_object = self.sem_seg_head(inputs, images, features, num_instances,
                                                                     mask_features, multi_scale_features,
-                                                                    batched_num_scrbs_per_mask,
-                                                                    batched_fg_coords_list,
-                                                                    batched_bg_coords_list,
+                                                                    num_clicks_per_object,
+                                                                    fg_coords,
+                                                                    bg_coords,
                                                                 )
-            losses = self.criterion(outputs, targets, batched_num_scrbs_per_mask)
+            losses = self.criterion(outputs, targets, num_clicks_per_object)
 
             for k in list(losses.keys()):
                 if k in self.criterion.weight_dict:
@@ -250,20 +166,18 @@ class DynamiteModel(nn.Module):
             return losses
            
         else:
-            # gt_instances=None
-            (outputs, mask_features, multi_scale_features, batched_num_scrbs_per_mask) = self.sem_seg_head(batched_inputs,  images, features, batched_num_instances,
+            (outputs, mask_features, multi_scale_features, num_clicks_per_object) = self.sem_seg_head(inputs,  images, features, num_instances,
                                                                                     mask_features, 
-                                                                                    multi_scale_features, batched_num_scrbs_per_mask,
-                                                                                    batched_fg_coords_list, batched_bg_coords_list, batched_max_timestamp)
-            processed_results = self.process_results(batched_inputs, images, outputs, batched_num_instances, batched_num_scrbs_per_mask)
+                                                                                    multi_scale_features, num_clicks_per_object,
+                                                                                    fg_coords, bg_coords, max_timestamp)
+            processed_results = self.process_results(inputs, images, outputs, num_instances, num_clicks_per_object)
             if self.iterative_evaluation:
-                return (processed_results, outputs, images,  batched_num_instances, features, mask_features,
-                        multi_scale_features, batched_num_scrbs_per_mask,
-                        batched_fg_coords_list, batched_bg_coords_list)
+                return (processed_results, outputs, images,  num_instances, features, mask_features,
+                        multi_scale_features, num_clicks_per_object, fg_coords, bg_coords)
             else:
                 return processed_results
 
-    def process_results(self, batched_inputs, images, outputs, num_instances, batched_num_scrbs_per_mask=None):
+    def process_results(self, inputs, images, outputs, num_instances, num_clicks_per_object=None):
        
         mask_pred_results = outputs["pred_masks"]
         # upsample masks
@@ -276,63 +190,52 @@ class DynamiteModel(nn.Module):
 
         del outputs
 
-        if batched_num_scrbs_per_mask is None:
-            batched_num_scrbs_per_mask = [[1]*inst_per_image for inst_per_image in num_instances]
+        if num_clicks_per_object is None:
+            num_clicks_per_object = [[1]*inst_per_image for inst_per_image in num_instances]
 
         processed_results = []
-        for mask_pred_result, input_per_image, image_size, inst_per_image, num_scrbs_per_mask in zip(
-            mask_pred_results, batched_inputs, images.image_sizes, num_instances, batched_num_scrbs_per_mask
+        for mask_pred_result, input_per_image, image_size, inst_per_image, num_clicks_per_object in zip(
+            mask_pred_results, inputs, images.image_sizes, num_instances, num_clicks_per_object
         ):
             height = input_per_image.get("height", image_size[0])
             width = input_per_image.get("width", image_size[1])
             processed_results.append({})
             
-            if self.sem_seg_postprocess_before_inference:
-                mask_pred_result = retry_if_cuda_oom(sem_seg_postprocess)(
-                    mask_pred_result, image_size, height, width
-                )
+            mask_pred_result = retry_if_cuda_oom(sem_seg_postprocess)(
+                mask_pred_result, image_size, height, width
+            )
     
             # interactive instance segmentation inference
-            if self.instance_on:
-                instance_r = retry_if_cuda_oom(self.interactive_instance_inference)(mask_pred_result, inst_per_image, num_scrbs_per_mask)
-                processed_results[-1]["instances"] = instance_r
+            instance_r = retry_if_cuda_oom(self.interactive_instance_inference)(mask_pred_result, inst_per_image, num_clicks_per_object)
+            processed_results[-1]["instances"] = instance_r
 
         return processed_results
 
-    def preprocess_batch_data(self, batched_inputs):
-        images = [x["image"].to(self.device) for x in batched_inputs]
+    def preprocess_batch_data(self, inputs):
+        images = [x["image"].to(self.device) for x in inputs]
         images = [(x - self.pixel_mean) / self.pixel_std for x in images]
         images = ImageList.from_tensors(images, self.size_divisibility)
 
         # images: [Bs, 3, H, W]
-        if 'num_scrbs_per_mask' in batched_inputs[0]:
-            num_scrbs_per_mask = []
+        if 'num_clicks_per_object' in inputs[0]:
+            num_clicks_per_object = []
             fg_coords = []
             bg_coords = []
             num_instances = []
 
-            for x in batched_inputs:
-                num_scrbs_per_mask.append(x['num_scrbs_per_mask'])
+            for x in inputs:
+                num_clicks_per_object.append(x['num_clicks_per_object'])
                 fg_coords.append(x['fg_click_coords'])
                 bg_coords.append(x['bg_click_coords'])
-                num_instances.append(len(x['num_scrbs_per_mask']))
+                num_instances.append(len(x['num_clicks_per_object']))
                
-            return images, num_instances, num_scrbs_per_mask, fg_coords, bg_coords
-    
-    def prepare_scribbles(self, scribbles,images):
-        h_pad, w_pad = images.tensor.shape[-2:]
-        padded_scribbles = torch.zeros((scribbles.shape[0],h_pad, w_pad), dtype=scribbles.dtype, device=scribbles.device)
-        padded_scribbles[:, : scribbles.shape[1], : scribbles.shape[2]] = scribbles
-        return padded_scribbles
+            return images, num_instances, num_clicks_per_object, fg_coords, bg_coords
 
     def prepare_targets(self, targets, images):
-        # h_pad, w_pad = images.tensor.shape[-2:]
+
         new_targets = []
         for (targets_per_image, padding_mask_per_image, bg_mask_per_image) in targets:
-            # pad gt
-            # gt_masks = targets_per_image.gt_masks
-            # padded_masks = torch.zeros((gt_masks.shape[0], h_pad, w_pad), dtype=gt_masks.dtype, device=gt_masks.device)
-            # padded_masks[:, : gt_masks.shape[1], : gt_masks.shape[2]] = gt_masks
+            
             new_targets.append(
                 {
                     "labels": targets_per_image.gt_classes,
@@ -343,18 +246,18 @@ class DynamiteModel(nn.Module):
             )
         return new_targets
 
-    def interactive_instance_inference(self, mask_pred, num_instances, num_scrbs_per_mask=None):
+    def interactive_instance_inference(self, mask_pred, num_instances, num_clicks_per_object=None):
+
         # mask_pred is already processed to have the same shape as original input
-        # print("interactive instance inference")
         image_size = mask_pred.shape[-2:]
         result = Instances(image_size)
         # mask (before sigmoid)
         import copy
-        num_scrbs_per_mask_copy = copy.deepcopy(num_scrbs_per_mask)
-        num_scrbs_per_mask_copy.append(mask_pred.shape[0]-sum(num_scrbs_per_mask))
+        num_clicks_per_object_copy = copy.deepcopy(num_clicks_per_object)
+        num_clicks_per_object_copy.append(mask_pred.shape[0]-sum(num_clicks_per_object))
 
         temp_out = []
-        splited_masks = torch.split(mask_pred, num_scrbs_per_mask_copy, dim=0)
+        splited_masks = torch.split(mask_pred, num_clicks_per_object_copy, dim=0)
         for m in splited_masks[:-1]:
             temp_out.append(torch.max(m, dim=0).values)
         mask_pred = torch.cat([torch.stack(temp_out),splited_masks[-1]]) # can remove splited_masks[-1] all together

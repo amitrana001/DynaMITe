@@ -229,7 +229,7 @@ class Trainer(DefaultTrainer):
             else:
                 max_interactions = 20
                 iou_threshold = [0.90]
-                from dynamite.evaluation.single_instance_evaluation_coords import get_avg_noc
+                from dynamite.inference.single_instance_evaluation_coords import get_avg_noc
                 for iou in iou_threshold:
                     for s in range(3):
                         # model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + f"_S{s}"
@@ -284,9 +284,6 @@ def setup(args):
     add_hrnet_config(cfg)
     cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
-    # if args.eval_only:
-    #     cfg.SEED = 46699430
-    # cfg.OUTPUT_DIR = "./all_data/new_models/class_agnostic"
     cfg.freeze()
     default_setup(cfg, args)
     # Setup logger for "mask_former" module

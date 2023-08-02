@@ -29,23 +29,6 @@ from dynamite.data.points.annotation_generator import create_circular_mask
 __all__ = ["COCOLVISDatasetMapper"]
 
 
-def filter_coco_lvis_instances(instances, min_area):
-    # num_instances = len(instances.gt_masks)
-    # polygon_masks = PolygonMasks(instances.gt_masks.polygons)
-    # masks_area = polygon_masks.area()
-    m = []
-    for mask in instances.gt_masks:
-        m.append(mask.sum() > min_area)
-    # print(f"instances: {len(instances)}, masks: {len(masks_area)},{masks_area.shape}")
-    # num_instances = len(masks_area)
-    # m = []
-    # for mask_area in masks_area:
-        # m.append(mask_area > min_area)
-    m = torch.tensor(m).type(torch.bool)
-    # print(m)
-    return instances[m]    
-# This is specifically designed for the COCO dataset.
-
 class COCOLVISDatasetMapper:
     """
     A callable which takes a dataset dict in Detectron2 Dataset format,
@@ -68,10 +51,10 @@ class COCOLVISDatasetMapper:
         *,
         tfm_gens,
         image_format,
-        unique_timestamp,
-        use_point_features,
+        # unique_timestamp,
+        # use_point_features,
         min_area,
-        random_bg_queries=False,
+        # random_bg_queries=False,
         stuff_prob=0.15,
     ):
         """
@@ -90,9 +73,9 @@ class COCOLVISDatasetMapper:
         self.img_format = image_format
         self.is_train = is_train
         self.min_area = min_area
-        self.random_bg_queries = random_bg_queries
-        self.unique_timestamp = unique_timestamp
-        self.use_point_features = use_point_features
+        # self.random_bg_queries = random_bg_queries
+        # self.unique_timestamp = unique_timestamp
+        # self.use_point_features = use_point_features
         self.stuff_prob = stuff_prob
     
     @classmethod
@@ -104,9 +87,9 @@ class COCOLVISDatasetMapper:
             "is_train": is_train,
             "tfm_gens": tfm_gens,
             "image_format": cfg.INPUT.FORMAT,
-            "random_bg_queries": cfg.ITERATIVE.TRAIN.RANDOM_BG_QUERIES,
-            "unique_timestamp": cfg.ITERATIVE.TRAIN.UNIQUE_TIMESTAMP,
-            "use_point_features": cfg.ITERATIVE.TRAIN.USE_POINT_FEATURES,
+            # "random_bg_queries": cfg.ITERATIVE.TRAIN.RANDOM_BG_QUERIES,
+            # "unique_timestamp": cfg.ITERATIVE.TRAIN.UNIQUE_TIMESTAMP,
+            # "use_point_features": cfg.ITERATIVE.TRAIN.USE_POINT_FEATURES,
             "stuff_prob": cfg.ITERATIVE.TRAIN.STUFF_PROB,
             "min_area": cfg.INPUT.MIN_AREA_FOR_MASK
         }
@@ -169,15 +152,10 @@ class COCOLVISDatasetMapper:
             if not hasattr(instances, 'gt_masks'):
                 return None
             instances.gt_boxes = instances.gt_masks.get_bounding_boxes()
-            # boxes_area = instances.gt_boxes.area()
+
             # Need to filter empty instances first (due to augmentation)
             instances = utils.filter_empty_instances(instances)
-            # print(f"instances before filter:{instances.gt_masks.tensor.shape}")
-            # instances = filter_coco_lvis_instances(instances, min_area = 1000.0)
-            # visualization(dataset_dict["image"], instances)
-            # print(f"instances after filter:{instances.gt_masks.tensor.shape}")
             if len(instances) == 0:
-                # print("here")
                 return None
             # Generate masks from polygon
             h, w = instances.image_size
@@ -219,43 +197,31 @@ class COCOLVISDatasetMapper:
                 gt_masks = torch.stack(gt_masks,dim=0)
                 # assert num_objects == gt_masks.shape[0]
                 
-                # gt_masks = instances.gt_masks.tensor.to(dtype=torch.uint8)
-                
                 all_masks = dataset_dict["padding_mask"].int()
-                # filterd_gt_masks = []
+             
                 new_instances = Instances(image_size=image_shape)
-                
-                # new_gt_classes = instances.gt_classes[random_indices]
 
                 new_gt_classes = [0]*gt_masks.shape[0]
-                # new_gt_boxes = instances.gt_masks.get_bounding_boxes()[random_indices]
                 new_gt_boxes =  Boxes((np.zeros((gt_masks.shape[0],4))))
                 
                 new_instances.set('gt_masks', gt_masks)
                 new_instances.set('gt_classes', new_gt_classes)
                 new_instances.set('gt_boxes', new_gt_boxes) 
-                # filterd_gt_masks = []
-                # print(random_indices)
+               
                 semantic_map = torch.zeros((gt_masks.shape[-2:]), dtype=torch.int16)
                 for _id, m in enumerate(gt_masks):
                     semantic_map[m == 1] = _id+1
                     all_masks = torch.logical_or(all_masks, m)
                 dataset_dict['semantic_map'] = semantic_map
-                # new_gt_masks = new_gt_masks.unsqueeze(0)
-                # print(new_gt_masks.shape)
-                (num_scrbs_per_mask, fg_coords_list, bg_coords_list) = get_clicks_coords(gt_masks, all_masks=all_masks)
+                
+                (num_clicks_per_object, fg_coords_list, bg_coords_list) = get_clicks_coords(gt_masks, all_masks=all_masks)
         
-                # dataset_dict["fg_scrbs"] = None
-                # dataset_dict["bg_scrbs"] = None
                 dataset_dict["bg_mask"] = torch.logical_not(all_masks).to(dtype = torch.uint8)
                 dataset_dict["fg_click_coords"] = fg_coords_list
                 dataset_dict["bg_click_coords"] = bg_coords_list
-                dataset_dict["num_scrbs_per_mask"] = num_scrbs_per_mask
+                dataset_dict["num_clicks_per_object"] = num_clicks_per_object
 
-                # visualization(dataset_dict["image"], new_instances, prev_output=None, batched_fg_coords_list=[fg_coords_list],batched_bg_coords_list=[bg_coords_list])
-                assert len(num_scrbs_per_mask) == new_instances.gt_masks.shape[0]
-                # if not self.use_point_features:
-                #     assert len(fg_point_masks) == len(num_scrbs_per_mask) 
+                assert len(num_clicks_per_object) == new_instances.gt_masks.shape[0]
             else:
                 return None
 

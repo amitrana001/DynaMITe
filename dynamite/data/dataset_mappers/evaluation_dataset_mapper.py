@@ -173,7 +173,7 @@ class EvaluationDatasetMapper:
                 if 'ignore_mask' in dataset_dict:
                     ignore_masks = dataset_dict['ignore_mask'].to(device='cpu', dtype = torch.uint8)
                     
-                (num_scrbs_per_mask, fg_coords_list, bg_coords_list,
+                (num_clicks_per_object, fg_coords_list, bg_coords_list,
                 fg_point_masks, bg_point_masks, orig_fg_coords_list) = get_gt_clicks_coords_eval_orig(new_gt_masks, image_shape, ignore_masks=ignore_masks, unique_timestamp=self.unique_timestamp)
         
                 dataset_dict["fg_scrbs"] = fg_point_masks
@@ -182,11 +182,11 @@ class EvaluationDatasetMapper:
                 dataset_dict["orig_fg_click_coords"] = orig_fg_coords_list
                 dataset_dict["fg_click_coords"] = fg_coords_list
                 dataset_dict["bg_click_coords"] = bg_coords_list
-                dataset_dict["num_scrbs_per_mask"] = num_scrbs_per_mask
+                dataset_dict["num_clicks_per_object"] = num_clicks_per_object
                 # print(masks.tensor.dtype)
                 # visualization(dataset_dict["image"], new_instances, prev_output=None, batched_fg_coords_list=[fg_coords_list],batched_bg_coords_list=[bg_coords_list])
-                assert len(num_scrbs_per_mask) == gt_masks.shape[0]
-                assert len(fg_point_masks) == len(num_scrbs_per_mask) 
+                assert len(num_clicks_per_object) == gt_masks.shape[0]
+                assert len(fg_point_masks) == len(num_clicks_per_object) 
             else:
                 return None
 

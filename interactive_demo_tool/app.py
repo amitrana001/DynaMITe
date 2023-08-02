@@ -4,31 +4,15 @@ from tkinter import messagebox, filedialog, ttk
 import cv2
 import numpy as np
 from PIL import Image
-
+# import matplotlib as mpl
+# import matplotlib.colors as mplc
+import colorsys
 from interactive_demo_tool.canvas import CanvasImage
-from interactive_demo_tool.controller_mq_coords import InteractiveController
+from interactive_demo_tool.controller import InteractiveController
 from interactive_demo_tool.wrappers import BoundedNumericalEntry, FocusHorizontalScale, FocusCheckButton, \
     FocusButton, FocusLabelFrame
 from detectron2.utils.colormap import colormap
-# color_map = colormap(rgb=True, maximum=255)
-# color_map = color_map.astype(np.uint8)
-def get_palette(num_cls):
-    palette = np.zeros(3 * num_cls, dtype=np.int32)
-
-    for j in range(0, num_cls):
-        lab = j
-        i = 0
-
-        while lab > 0:
-            palette[j*3 + 0] |= (((lab >> 0) & 1) << (7-i))
-            palette[j*3 + 1] |= (((lab >> 1) & 1) << (7-i))
-            palette[j*3 + 2] |= (((lab >> 2) & 1) << (7-i))
-            i = i + 1
-            lab >>= 3
-
-    return palette.reshape((-1, 3))
-color_map = get_palette(80)[1:]
-
+from dynamite.utils.vis import color_map
 
 class InteractiveDemoApp(ttk.Frame):
     def __init__(self, master, args, cfg, model):
@@ -43,8 +27,6 @@ class InteractiveDemoApp(ttk.Frame):
         self.pack(fill="both", expand=True)
         self._input_file =None
         self.show_masks_only = False
-        # self.brs_modes = ['NoBRS', 'RGB-BRS', 'DistMap-BRS', 'f-BRS-A', 'f-BRS-B', 'f-BRS-C']
-        # self.limit_longest_size = args.limit_longest_size
         self.is_bg_click = False
         self.controller = InteractiveController(model, update_image_callback=self._update_image, cfg=cfg)
         self.xPos = 0
@@ -305,18 +287,8 @@ class InteractiveDemoApp(ttk.Frame):
         if image is not None:
             self.image_on_canvas.reload_image(Image.fromarray(image), reset_canvas)
 
-    def _set_click_dependent_widgets_state(self):
-        # after_1st_click_state = tk.NORMAL if self.controller.is_incomplete_mask else tk.DISABLED
-        # before_1st_click_state = tk.DISABLED if self.controller.is_incomplete_mask else tk.NORMAL
-
-        # self.finish_object_button.configure(state=after_1st_click_state)
-        # self.undo_click_button.configure(state=after_1st_click_state)
-        # self.reset_clicks_button.configure(state=after_1st_click_state)
-        pass
-
     def _reset_clicks(self):
-        # image = self.controller.image
-        # self.controller.set_image(image)
+
         for key in self.buttons:
             self.buttons[key].destroy()
         self.num_instances = 0
@@ -324,13 +296,9 @@ class InteractiveDemoApp(ttk.Frame):
         if self.is_bg_click:
             self.is_bg_click = False
             self.BG_CLICK.configure(bg= self.orig_bg_color)
-        # self.is_bg_click = False
-        # self.BG_CLICK.configure(fg= 'green')
+        
         self.xPos = 0
         self.controller.reset_clicks()
-        # self._update_image(reset_clicks=True)
-        # self.controller._reset_clicks()
-        # self.image_on_canvas.reload_image(Image.fromarray(self.controller.image), True)
 
     def _check_entry(self, widget):
         all_checked = True
@@ -345,16 +313,10 @@ class InteractiveDemoApp(ttk.Frame):
 
     def _add_button(self):
         self.xPos+=1
-        # self.yPos+=1
-        # color_c='#%02x%02x%02x' % (color_map[2*(self.num_instances)+2][0], color_map[2*(self.num_instances)+2][1], color_map[2*(self.num_instances)+2][2])
         color_c = get_color_from_map(self.num_instances)
-        # self.buttons[self.num_instances] = FocusButton(self.clicks_options_frame, width=5, bg = color_c,text=self.num_instances, 
-        #                                     command = lambda f=self.num_instances: self.pressed(f))
         self.buttons[self.num_instances] = FocusButton(self.clicks_options_frame, width=5, bg = color_c,
                                             command = lambda f=self.num_instances: self.pressed(f))
-        # self.buttons[self.num_instances].pack(side=tk.CENTER, padx=10, pady=3)
         self.buttons[self.num_instances].grid(row=self.xPos, column=1, padx=10, pady=2, sticky='E')
-        # self.xPos+=1
         self.pressed(self.num_instances)
         print(f"Added button for instance:{self.num_instances}")
         self.num_instances+=1
@@ -379,7 +341,7 @@ class InteractiveDemoApp(ttk.Frame):
             self.is_bg_click = False
             self.BG_CLICK.configure(bg= self.orig_bg_color)
         self.prev_pressed = index
-        # c = change_color_brightness(color_map[2*(index)+2],0.5)
+        
         c = change_color_brightness(color_map[index],2.2)
         color_c='#%02x%02x%02x' % (c[0],c[1], c[2])
         # color_c='#%02x%02x%02x' % (color_map[2*(index)+2][0], color_map[2*(index)+2][1], color_map[2*(index)+2][2])
@@ -393,12 +355,7 @@ class InteractiveDemoApp(ttk.Frame):
         self.is_bg_click = True
         self.BG_CLICK.configure(fg= 'green', bg = 'red')
 
-import matplotlib as mpl
-import matplotlib.colors as mplc
-import colorsys
-
 def get_color_from_map(index):
-    # color_c='#%02x%02x%02x' % (color_map[2*(index)+2][0], color_map[2*(index)+2][1], color_map[2*(index)+2][2])
     color_c='#%02x%02x%02x' % (color_map[index][0], color_map[index][1], color_map[index][2])
     return color_c
 
@@ -418,22 +375,14 @@ def change_color_brightness(color, brightness_factor):
             modified_color (tuple[double]): a tuple containing the RGB values of the
                 modified color. Each value in the tuple is in the [0.0, 1.0] range.
         """
-        # c = np.clip(brightness_factor*color, 0, 255)
-        # print(c)
-        # return c.astype(np.uint8)
-        # return color
-        # assert brightness_factor >= -1.0 and brightness_factor <= 1.0
-        # color=color.astype(np.float64)
-        # color/=255.0
-        # color = mplc.to_rgb(color)
-        # polygon_color = colorsys.rgb_to_hls(*mplc.to_rgb(color))
+        
         r, g, b = [x/255.0 for x in color]
         polygon_color =  colorsys.rgb_to_hls(r,g,b)
         modified_lightness = polygon_color[1] + (brightness_factor * polygon_color[1])
         modified_lightness = 0.0 if modified_lightness < 0.0 else modified_lightness
         modified_lightness = 1.0 if modified_lightness > 1.0 else modified_lightness
         modified_color = colorsys.hls_to_rgb(polygon_color[0], modified_lightness, polygon_color[2])
-        # print(modified_color*255)
+
         return np.asarray([c*255 for c in modified_color], dtype =np.uint8)
 
 

@@ -94,67 +94,39 @@ class SetFinalCriterion(nn.Module):
         2) we supervise each pair of matched ground-truth / prediction (supervise class and box)
     """
 
-    def __init__(self, num_classes, weight_dict, eos_coef, losses,
+    def __init__(self, weight_dict, losses,
                  num_points, oversample_ratio, importance_sample_ratio):
         """Create the criterion.
         Parameters:
-            num_classes: number of object categories, omitting the special no-object category
-            matcher: module able to compute a matching between targets and proposals
             weight_dict: dict containing as key the names of the losses and as values their relative weight.
-            eos_coef: relative classification weight applied to the no-object category
             losses: list of all the losses to be applied. See get_loss for list of available losses.
         """
         super().__init__()
-        self.num_classes = num_classes
         self.weight_dict = weight_dict
-        self.eos_coef = eos_coef
         self.losses = losses
-        empty_weight = torch.ones(self.num_classes + 1)
-        empty_weight[-1] = self.eos_coef
-        self.register_buffer("empty_weight", empty_weight)
 
         # pointwise mask loss parameters
         self.num_points = num_points
         self.oversample_ratio = oversample_ratio
         self.importance_sample_ratio = importance_sample_ratio
-
-    def loss_labels(self, outputs, targets, indices, num_masks):
-        """Classification loss (NLL)
-        targets dicts must contain the key "labels" containing a tensor of dim [nb_target_boxes]
-        """
-        assert "pred_logits" in outputs
-        src_logits = outputs["pred_logits"].float()
-
-        idx = self._get_src_permutation_idx(indices)
-        target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)])
-        target_classes = torch.full(
-            src_logits.shape[:2], self.num_classes, dtype=torch.int64, device=src_logits.device
-        )
-        target_classes[idx] = target_classes_o
-
-        loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight)
-        losses = {"loss_ce": loss_ce}
-        return losses
     
-    def loss_masks(self, outputs, targets, indices, num_masks, bg_loss = True, batched_num_scrbs_per_mask = None):
+    def loss_masks(self, outputs, targets, num_masks, num_clicks_per_object = None):
         """Compute the losses related to the masks: the focal loss and the dice loss.
         targets dicts must contain the key "masks" containing a tensor of dim [nb_target_boxes, h, w]
         """
         assert "pred_masks" in outputs
 
+        # Accumulate mask for each object (as there might be multiple clicks per object) and background
         new_outputs = []
-        if batched_num_scrbs_per_mask is not None:
+        if num_clicks_per_object is not None:
             import copy
             for i in range(outputs['pred_masks'].shape[0]):
-                # pred_masks_per_image = {}
                 temp_out = []
-                copy_num_scrbs = copy.deepcopy(batched_num_scrbs_per_mask[i])
-                copy_num_scrbs.append(outputs['pred_masks'][i].shape[0] - sum(batched_num_scrbs_per_mask[i]))
-                splited_masks = torch.split(outputs['pred_masks'][i], copy_num_scrbs, dim=0)
+                clicks_per_image = copy.deepcopy(num_clicks_per_object[i])
+                clicks_per_image.append(outputs['pred_masks'][i].shape[0] - sum(num_clicks_per_object[i]))
+                splited_masks = torch.split(outputs['pred_masks'][i], clicks_per_image, dim=0)
                 for m in splited_masks:
                     temp_out.append(torch.max(m, dim=0).values)
-                # outputs['pred_masks'][i] = torch.cat([torch.stack(temp_out),splited_masks[-1]])
-                # pred_masks_per_image['pred_masks'] = torch.stack(temp_out)
                 new_outputs.append(torch.stack(temp_out))
         src_masks = torch.cat(new_outputs,dim=0)
 
@@ -197,48 +169,26 @@ class SetFinalCriterion(nn.Module):
         del target_masks
         return losses
 
-    def _get_src_permutation_idx(self, indices):
-        # permute predictions following indices
-        batch_idx = torch.cat([torch.full_like(src, i) for i, (src, _) in enumerate(indices)])
-        src_idx = torch.cat([src for (src, _) in indices])
-        return batch_idx, src_idx
-
-    def _get_tgt_permutation_idx(self, indices):
-        # permute targets following indices
-        batch_idx = torch.cat([torch.full_like(tgt, i) for i, (_, tgt) in enumerate(indices)])
-        tgt_idx = torch.cat([tgt for (_, tgt) in indices])
-        return batch_idx, tgt_idx
-
-    def get_loss(self, loss, outputs, targets, indices, num_masks, batched_num_scrbs_per_mask=None):
+    def get_loss(self, loss, outputs, targets, num_masks, num_clicks_per_object=None):
         loss_map = {
-            'labels': self.loss_labels,
             'masks': self.loss_masks,
         }
         assert loss in loss_map, f"do you really want to compute {loss} loss?"
-        return loss_map[loss](outputs, targets, indices, num_masks, True, batched_num_scrbs_per_mask)
+        return loss_map[loss](outputs, targets, num_masks, num_clicks_per_object)
 
-    def forward(self, outputs, targets, batched_num_scrbs_per_mask = None):
+    def forward(self, outputs, targets, num_clicks_per_object = None):
         """This performs the loss computation.
         Parameters:
              outputs: dict of tensors, see the output specification of the model for the format
              targets: list of dicts, such that len(targets) == batch_size.
                       The expected keys in each dict depends on the losses applied, see each loss' doc
         """
-        outputs_without_aux = {k: v for k, v in outputs.items() if k != "aux_outputs"}
 
-        # already know the matching between the outputs of the last layer and the targets
-        #use them as indices
-        indices = []
         for i,t in enumerate(targets):
-            num_gt_classes = len(t['labels']) + 1
-            # target_bg_mask = 1 - torch.max(t["masks"],dim=0).values
-            # full_fg_mask = torch.max(t["masks"],dim=0).values
-            # target_bg_mask = torch.logical_not(torch.logical_or(t["padding_mask"], full_fg_mask)).to(dtype=torch.uint8)
+            
             target_bg_mask = t['bg_mask']
             targets[i]["masks"] = torch.cat((t["masks"], target_bg_mask.unsqueeze(0)), dim=0)
-            # indxs = torch.tensor(range(num_gt_classes))
-            # indices.append((indxs, indxs)) 
-
+           
         
         # Compute the average number of target boxes accross all nodes, for normalization purposes
         num_masks = sum(len(t["labels"])+1 for t in targets)
@@ -252,14 +202,13 @@ class SetFinalCriterion(nn.Module):
         # Compute all the requested losses
         losses = {}
         for loss in self.losses:
-            losses.update(self.get_loss(loss, outputs, targets, indices, num_masks, batched_num_scrbs_per_mask))
+            losses.update(self.get_loss(loss, outputs, targets, num_masks, num_clicks_per_object))
 
         # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
         if "aux_outputs" in outputs:
             for i, aux_outputs in enumerate(outputs["aux_outputs"]):
-                # indices = self.matcher(aux_outputs, targets)
                 for loss in self.losses:
-                    l_dict = self.get_loss(loss, aux_outputs, targets, indices, num_masks, batched_num_scrbs_per_mask)
+                    l_dict = self.get_loss(loss, aux_outputs, targets, num_masks, num_clicks_per_object)
                     l_dict = {k + f"_{i}": v for k, v in l_dict.items()}
                     losses.update(l_dict)
 
@@ -270,8 +219,6 @@ class SetFinalCriterion(nn.Module):
         body = [
             "losses: {}".format(self.losses),
             "weight_dict: {}".format(self.weight_dict),
-            "num_classes: {}".format(self.num_classes),
-            "eos_coef: {}".format(self.eos_coef),
             "num_points: {}".format(self.num_points),
             "oversample_ratio: {}".format(self.oversample_ratio),
             "importance_sample_ratio: {}".format(self.importance_sample_ratio),

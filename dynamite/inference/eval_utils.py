@@ -105,39 +105,6 @@ def save_visualization(inputs, pred_masks, scribbles, dir_path, iou, num_iter,  
     os.makedirs(save_dir, exist_ok=True)
     cv2.imwrite(os.path.join(save_dir, f"iter_{num_iter}_{np.round(iou,4)}.jpg"), image)
 
-def get_gt_clicks_coords_eval(masks, max_num_points=1, ignore_masks=None, radius_size=8, first_click_center=True, t= 0, unique_timestamp=False):
-
-    """
-    :param masks: numpy array of shape I x H x W
-    :param patch_size: size of patch (int)
-    """
-    # assert all_masks is not None
-    masks = np.asarray(masks).astype(np.uint8)
-    if ignore_masks is not None:
-        not_ignores_mask = np.logical_not(np.asarray(ignore_masks, dtype=np.bool_))
-
-    I, H, W = masks.shape
-    num_scrbs_per_mask = [0]*I
-    fg_coords_list = []
-    fg_point_masks = []
-    for i, (_m) in enumerate(masks):
-        coords = []
-        point_masks_per_obj = []
-        if first_click_center:
-            if ignore_masks is not None:
-                _m = np.logical_and(_m, not_ignores_mask[i]).astype(np.uint8)
-            center_coords = get_max_dt_point_mask(_m, max_num_pts=max_num_points)
-            # center_coords.append(t)
-            _pm = create_circular_mask(H, W, centers=[center_coords], radius=radius_size)
-            point_masks_per_obj.append(_pm)
-            coords.append([center_coords[0], center_coords[1], t])
-            if unique_timestamp:
-                t+=1
-            num_scrbs_per_mask[i]+=1 
-        fg_coords_list.append(coords)
-        fg_point_masks.append(torch.from_numpy(np.stack(point_masks_per_obj, axis=0)).to(torch.uint8))
-    return num_scrbs_per_mask, fg_coords_list, None, fg_point_masks, None
-
 def get_gt_clicks_coords_eval_orig(masks, image_shape, max_num_points=1, ignore_masks=None,
                                    radius_size=5, first_click_center=True, t= 0, 
                                    unique_timestamp=False, use_point_features=False):
@@ -155,7 +122,7 @@ def get_gt_clicks_coords_eval_orig(masks, image_shape, max_num_points=1, ignore_
     trans_h, trans_w = image_shape
     ratio_h = trans_h/H
     ratio_w = trans_w/W
-    num_scrbs_per_mask = [0]*I
+    num_clicks_per_object = [0]*I
     orig_fg_coords_list = []
     fg_coords_list = []
     fg_point_masks = []
@@ -175,222 +142,14 @@ def get_gt_clicks_coords_eval_orig(masks, image_shape, max_num_points=1, ignore_
             coords.append([center_coords[0]*ratio_h, center_coords[1]*ratio_w, t])
             if unique_timestamp:
                 t+=1
-            num_scrbs_per_mask[i]+=1
+            num_clicks_per_object[i]+=1
         orig_fg_coords_list.append(orig_coords) 
         fg_coords_list.append(coords)
         if not use_point_features:
             fg_point_masks.append(torch.from_numpy(np.stack(point_masks_per_obj, axis=0)).to(torch.uint8))
         # else:
         #     fg_point_masks = None
-    return num_scrbs_per_mask, fg_coords_list, None, fg_point_masks, None, orig_fg_coords_list
-
-def get_next_coords_bg_eval(all_fp, device, not_clicked_map ,fg_click_map, bg_click_map, radius = 3, strategy = 0):
-
-    H,W = all_fp.shape
-    fp_mask = all_fp
-    if strategy == 2:
-        fp_mask = np.logical_and(fp_mask, ~(bg_click_map))
-    
-    fp_mask = np.pad(fp_mask, ((1, 1), (1, 1)), 'constant')
-    fp_mask_dt = cv2.distanceTransform(fp_mask.astype(np.uint8), cv2.DIST_L2, 3)[1:-1, 1:-1]
-
-    fp_mask_dt = fp_mask_dt * not_clicked_map
-    _max_dist = np.max(fp_mask_dt)
-    coords_y, coords_x = np.where(fp_mask_dt == _max_dist)
-
-    sample_locations = [[coords_y[0], coords_x[0]]]
-    pm = create_circular_mask(H, W, centers=sample_locations, radius=radius)
-    
-    if strategy == 0:
-        not_clicked_map[coords_y[0], coords_x[0]] = False
-    elif strategy == 1:
-        not_clicked_map[np.where(pm==1)] = False
-    elif strategy == 2:
-        bg_click_map = np.logical_or(bg_click_map,pm)
-
-    return (torch.from_numpy(pm).to(device, dtype = torch.float).unsqueeze(0),
-            not_clicked_map, sample_locations[0],
-            fg_click_map, bg_click_map)
-
-def get_next_coords_fg_eval(pred_mask, gt_mask, not_clicked_map, fg_click_map, bg_click_map, device, radius=3, strategy=0):
-
-    gt_mask = np.asarray(gt_mask, dtype = np.bool_)
-    pred_mask = np.asarray(pred_mask, dtype = np.bool_)
-    fn_mask = np.logical_and(gt_mask, np.logical_not(pred_mask))
-    
-    if fn_mask.sum()==0:
-        fn_mask = gt_mask
-
-    H, W = gt_mask.shape    
-    fn_mask = np.pad(fn_mask, ((1, 1), (1, 1)), 'constant')
-    fn_mask_dt = cv2.distanceTransform(fn_mask.astype(np.uint8), cv2.DIST_L2, 0)[1:-1, 1:-1]
-
-    fn_mask_dt = fn_mask_dt * not_clicked_map
-
-    fn_max_dist = np.max(fn_mask_dt)
-    coords_y, coords_x = np.where(fn_mask_dt == fn_max_dist)  # coords is [y, x]
-    sample_locations = [[coords_y[0], coords_x[0]]]
-    # print(sample_locations)
-    pm = create_circular_mask(H, W, centers=sample_locations, radius=radius)
-   
-    if strategy == 0:
-        not_clicked_map[coords_y[0], coords_x[0]] = False
-    elif strategy == 1:
-        not_clicked_map[np.where(pm==1)] = False
-    elif strategy == 2:
-        fg_click_map = np.logical_or(bg_click_map,pm)
-
-    return (torch.from_numpy(pm).to(device, dtype = torch.float).unsqueeze(0),
-            not_clicked_map, sample_locations[0],
-            fg_click_map, bg_click_map)
-
-def get_next_click_bg(all_fp, not_clicked_map, radius=5, num_points=1,device='cpu'):
-    H, W = all_fp.shape
-    # all_fp = np.asarray(all_fp).astype(np.uint8)
-    all_fp = np.asarray(all_fp, dtype = np.bool_)
-    # print("all_fp:", all_fp.sum())
-    # pred_mask = np.asarray(pred_mask, dtype = np.bool_)
-    # fn_mask = np.logical_and(gt_mask, np.logical_not(pred_mask))
-    # # fp_mask = np.logical_and(np.logical_not(gt_mask), pred_mask)
-    # H, W = gt_mask.shape
-    padding=True
-    if padding:
-        all_fp = np.pad(all_fp, ((1, 1), (1, 1)), 'constant')
-        # fp_mask = np.pad(fp_mask, ((1, 1), (1, 1)), 'constant')
-
-    all_fp_dt = cv2.distanceTransform(all_fp.astype(np.uint8), cv2.DIST_L2, 0)
-    # fp_mask_dt = cv2.distanceTransform(fp_mask.astype(np.uint8), cv2.DIST_L2, 0)
-
-    if padding:
-        all_fp_dt = all_fp_dt[1:-1, 1:-1]
-        # fp_mask_dt = fp_mask_dt[1:-1, 1:-1]
-
-    all_fp_dt = all_fp_dt * not_clicked_map
-    # fp_mask_dt = fp_mask_dt * not_clicked_map
-
-    all_fp_max_dt = np.max(all_fp_dt)
-    # fp_max_dist = np.max(fp_mask_dt)
-
-    # is_positive = fn_max_dist > fp_max_dist
-    # if is_positive:
-    coords_y, coords_x = np.where(all_fp_dt == all_fp_max_dt)  # coords is [y, x]
-    # else:
-    #     coords_y, coords_x = np.where(fp_mask_dt == fp_max_dist)  # coords is [y, x]
-    sample_locations = [[coords_y[0], coords_x[0]]]
-    # print(sample_locations)
-    pm = create_circular_mask(H, W, centers=sample_locations, radius=radius)
-    not_clicked_map[coords_y[0], coords_x[0]] = False
-    return torch.from_numpy(pm).to(device, dtype = torch.uint8), not_clicked_map
-
-def get_fn_area(pred_masks, gt_masks):
-    fn_per_object = []
-    for i, (pred_mask, gt_mask) in enumerate(zip(pred_masks,gt_masks)):
-        pred_mask = pred_mask>0.5
-        fn = torch.logical_and(torch.logical_not(pred_mask), gt_mask).sum()
-        fn_per_object.append(fn)
-    return fn_per_object
-
-def get_next_click_fg(pred_mask, gt_mask, not_clicked_map, radius=5, device='cpu'):
-
-    gt_mask = np.asarray(gt_mask, dtype = np.bool_)
-    pred_mask = np.asarray(pred_mask, dtype = np.bool_)
-    fn_mask = np.logical_and(gt_mask, np.logical_not(pred_mask))
-    
-    if fn_mask.sum()==0:
-        fn_mask = gt_mask
-
-    H, W = gt_mask.shape
-    
-    fn_mask = np.pad(fn_mask, ((1, 1), (1, 1)), 'constant')
-    fn_mask_dt = cv2.distanceTransform(fn_mask.astype(np.uint8), cv2.DIST_L2, 0)[1:-1, 1:-1]
-
-    fn_mask_dt = fn_mask_dt * not_clicked_map
-
-    fn_max_dist = np.max(fn_mask_dt)
-    coords_y, coords_x = np.where(fn_mask_dt == fn_max_dist)  # coords is [y, x]
-    # else:
-    #     coords_y, coords_x = np.where(fp_mask_dt == fp_max_dist)  # coords is [y, x]
-    sample_locations = [[coords_y[0], coords_x[0]]]
-    # print(sample_locations)
-    pm = create_circular_mask(H, W, centers=sample_locations, radius=radius)
-    not_clicked_map[coords_y[0], coords_x[0]] = False
-    return torch.from_numpy(pm).to(device, dtype = torch.uint8), not_clicked_map
-
-def get_next_click(
-    pred_mask, gt_mask, not_clicked_map, radius=8, device='cpu',
-    ignore_mask=None, padding=True, strategy = 1,
-    fg_click_map = None, bg_click_map = None
-):
-
-    if ignore_mask is not None:
-        not_ignore_mask = np.logical_not(np.asarray(ignore_mask, dtype=np.bool_))
-    gt_mask = np.asarray(gt_mask, dtype = np.bool_)
-    pred_mask = np.asarray(pred_mask, dtype = np.bool_)
-
-    if ignore_mask is not None:
-        fn_mask =  np.logical_and(np.logical_and(gt_mask, np.logical_not(pred_mask)), not_ignore_mask)
-        fp_mask =  np.logical_and(np.logical_and(np.logical_not(gt_mask), pred_mask), not_ignore_mask)
-    else:
-        fn_mask =  np.logical_and(gt_mask, np.logical_not(pred_mask))
-        fp_mask =  np.logical_and(np.logical_not(gt_mask), pred_mask)
-    
-    if strategy == 2:
-        fn_mask = np.logical_and(fn_mask,~(fg_click_map))
-        fp_mask = np.logical_and(fp_mask, ~(bg_click_map))
-    
-    # if fn_mask.sum()==0:
-    #     fn_mask = gt_mask
-    
-    H, W = gt_mask.shape
-
-    if padding:
-        fn_mask = np.pad(fn_mask, ((1, 1), (1, 1)), 'constant')
-        fp_mask = np.pad(fp_mask, ((1, 1), (1, 1)), 'constant')
-
-    fn_mask_dt = cv2.distanceTransform(fn_mask.astype(np.uint8), cv2.DIST_L2, 0)
-    fp_mask_dt = cv2.distanceTransform(fp_mask.astype(np.uint8), cv2.DIST_L2, 0)
-
-    if padding:
-        fn_mask_dt = fn_mask_dt[1:-1, 1:-1]
-        fp_mask_dt = fp_mask_dt[1:-1, 1:-1]
-
-    if strategy !=2:
-        fn_mask_dt = fn_mask_dt * not_clicked_map
-        fp_mask_dt = fp_mask_dt * not_clicked_map
-
-    fn_max_dist = np.max(fn_mask_dt)
-    fp_max_dist = np.max(fp_mask_dt)
-
-    is_positive = fn_max_dist > fp_max_dist
-
-    if is_positive:
-        coords_y, coords_x = np.where(fn_mask_dt == fn_max_dist)  # coords is [y, x]
-    else:
-        coords_y, coords_x = np.where(fp_mask_dt == fp_max_dist)  # coords is [y, x]
-
-    sample_locations = [[coords_y[0], coords_x[0]]]
-
-    pm = create_circular_mask(H, W, centers=sample_locations, radius=radius)
-    
-    if strategy == 0:
-        not_clicked_map[coords_y[0], coords_x[0]] = False
-    elif strategy == 1:
-        not_clicked_map[np.where(pm==1)] = False
-    elif strategy == 2:
-        if is_positive:
-            fg_click_map = np.logical_or(fg_click_map,pm)
-        else:
-            bg_click_map = np.logical_or(bg_click_map,pm)
-
-    return (torch.from_numpy(pm).to(device, dtype = torch.float).unsqueeze(0),
-            is_positive, not_clicked_map, sample_locations[0],
-            fg_click_map, bg_click_map)
-
-def prepare_scribbles(scribbles,images):
-    h_pad, w_pad = images.tensor.shape[-2:]
-    padded_scribbles = torch.zeros((scribbles.shape[0],h_pad, w_pad), dtype=scribbles.dtype, device=scribbles.device)
-    padded_scribbles[:, : scribbles.shape[1], : scribbles.shape[2]] = scribbles
-    return padded_scribbles
+    return num_clicks_per_object, fg_coords_list, None, fg_point_masks, None, orig_fg_coords_list
 
 
 def log_single_instance(res, max_interactions, dataset_name, model_name, ablation=False, save_summary_stats=False):

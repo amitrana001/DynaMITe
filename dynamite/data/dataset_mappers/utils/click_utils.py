@@ -43,7 +43,7 @@ def get_clicks_coords(masks, max_num_points=6, first_click_center=True, all_mask
     _neg_probs = generate_probs(max_num_points+1, gamma = 0.7)
 
     I, H, W = masks.shape
-    num_scrbs_per_mask = [0]*I
+    num_clicks_per_object = [0]*I
     fg_coords_list = []
     for i, (_m) in enumerate(masks):
         coords = []
@@ -54,7 +54,7 @@ def get_clicks_coords(masks, max_num_points=6, first_click_center=True, all_mask
             coords.append([center_coords[0], center_coords[1], t])
             # if unique_timestamp:
             t+=1
-            num_scrbs_per_mask[i]+=1 
+            num_clicks_per_object[i]+=1 
         
         kernel = np.ones((3,3),np.uint8)
         _eroded_m = cv2.erode(_m,kernel,iterations = 1)
@@ -70,11 +70,11 @@ def get_clicks_coords(masks, max_num_points=6, first_click_center=True, all_mask
             coords.append([point_coords[0], point_coords[1], t])
             # if unique_timestamp:
             t+=1
-            num_scrbs_per_mask[i]+=1
+            num_clicks_per_object[i]+=1
         fg_coords_list.append(coords)
         
     if np.random.rand() < 0.2:
-        return num_scrbs_per_mask, fg_coords_list, None
+        return num_clicks_per_object, fg_coords_list, None
     
     bg_coords_list = []
     full_bg_mask = (~all_masks).astype(np.uint8)
@@ -92,4 +92,4 @@ def get_clicks_coords(masks, max_num_points=6, first_click_center=True, all_mask
         # if unique_timestamp:
         t+=1
 
-    return num_scrbs_per_mask, fg_coords_list, bg_coords_list
+    return num_clicks_per_object, fg_coords_list, bg_coords_list

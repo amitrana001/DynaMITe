@@ -17,7 +17,7 @@ from detectron2.utils.comm import get_world_size
 from detectron2.utils.logger import log_every_n_seconds
 from torch import nn
 from .clicker import Clicker
-from dynamite.evaluation.eval_utils import prepare_scribbles, get_next_coords_bg_eval, get_next_coords_fg_eval, save_visualization
+from dynamite.inference.eval_utils import prepare_scribbles, get_next_coords_bg_eval, get_next_coords_fg_eval, save_visualization
 from dynamite.utils.train_utils import compute_fn_iou
 color_map = colormap(rgb=True, maximum=1)
 

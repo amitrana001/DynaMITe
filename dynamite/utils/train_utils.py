@@ -1,13 +1,9 @@
 import math
 import torch
-import torchvision
-from detectron2.structures import Boxes, ImageList, Instances, BitMasks
-# from ..data.scribble.gen_scribble import get_iterative_scribbles
 import numpy as np
 import copy
 import cv2
 import random
-from dynamite.data.points.annotation_generator import create_circular_mask
 
 def compute_iou(gt_masks, pred_masks, max_objs=15, iou_thres = 0.90):
 
@@ -26,9 +22,9 @@ def compute_iou(gt_masks, pred_masks, max_objs=15, iou_thres = 0.90):
             break
     return worst_indexs
 
-def get_next_clicks(targets, pred_output, timestamp, batched_num_scrbs_per_mask=None,
-                       batched_fg_coords_list=None, batched_bg_coords_list = None,
-                       batched_max_timestamp = None
+def get_next_clicks(targets, pred_output, timestamp, batched_num_clicks_per_object=None,
+                       fg_coords=None, bg_coords = None,
+                       max_timestamp = None
 ):
     
     # OPTIMIZATION
@@ -43,7 +39,7 @@ def get_next_clicks(targets, pred_output, timestamp, batched_num_scrbs_per_mask=
         
         indices = compute_iou(gt_masks_per_image,pred_masks_per_image)
         # if unique_timestamp:
-        timestamp = batched_max_timestamp[i]+1
+        timestamp = max_timestamp[i]+1
         # if scribbles:
         for j in indices:
             sampled_coords_info = _get_corrective_clicks(pred_masks_per_image[j], gt_masks_per_image[j],
@@ -56,28 +52,18 @@ def get_next_clicks(targets, pred_output, timestamp, batched_num_scrbs_per_mask=
                 timestamp += len(point_coords)
                 for k, obj_indx in enumerate(obj_indices):
                     if obj_indx == -1:
-                        if batched_bg_coords_list[i]:
-                            batched_bg_coords_list[i].extend([point_coords[k]])
-                            # if not use_point_features:
-                            #     scribbles[i][-1] = torch.cat([scribbles[i][-1],point_masks[k].unsqueeze(0)],0)
+                        if bg_coords[i]:
+                            bg_coords[i].extend([point_coords[k]])
                         else:
-                            batched_bg_coords_list[i] = [point_coords[k]]
-                            # if not use_point_features:
-                            #     scribbles[i][-1] = point_masks[k].unsqueeze(0)
-                        # if not use_point_features:
-                        #     assert scribbles[i][-1].shape[0] == len(batched_bg_coords_list[i])
+                            bg_coords[i] = [point_coords[k]]
                     else:
-                        # if not use_point_features:
-                        #     scribbles[i][obj_indx] = torch.cat([scribbles[i][obj_indx],point_masks[k].unsqueeze(0)],0)
-                        batched_fg_coords_list[i][obj_indx].extend([point_coords[k]])
-                        batched_num_scrbs_per_mask[i][obj_indx]+= 1
+                        fg_coords[i][obj_indx].extend([point_coords[k]])
+                        batched_num_clicks_per_object[i][obj_indx]+= 1
         # if unique_timestamp:
-        batched_max_timestamp[i] = timestamp-1
-    # if unique_timestamp:
-        return batched_num_scrbs_per_mask,  batched_fg_coords_list, batched_bg_coords_list, batched_max_timestamp
-    # return batched_num_scrbs_per_mask, scribbles, batched_fg_coords_list, batched_bg_coords_list
+        max_timestamp[i] = timestamp-1
+
+        return batched_num_clicks_per_object,  fg_coords, bg_coords, max_timestamp
                   
-# from mask2former.data.points.annotation_generator import create_circular_mask, get_max_dt_point_mask
 def _get_corrective_clicks(pred_mask, gt_mask, semantic_map, padding_mask,
                            timestamp, max_num_points=2,
 ):
@@ -119,29 +105,22 @@ def _get_corrective_clicks(pred_mask, gt_mask, semantic_map, padding_mask,
         indices = random.sample(range(sample_locations.shape[0]), num_points)
         H, W = pred_mask.shape
         points_coords = []
-        # point_masks = []
         obj_indices = []
         for index in indices:
             coords = sample_locations[index]
-            # if not use_point_features:
-            #     _pm = create_circular_mask(H, W, centers=[coords], radius=3)
-            #     point_masks.append(_pm)
+        
             points_coords.append([coords[0], coords[1],timestamp])
             obj_indx = semantic_map[coords[0]][coords[1]] -1
             obj_indices.append(obj_indx)
-            # if unique_timestamp:
             timestamp+=1
-            # points_coords.append(coords)
-        # if not use_point_features:
-        #     point_masks = torch.from_numpy(np.stack(point_masks, axis=0)).to(device=device, dtype=torch.uint8)
         return (points_coords, obj_indices)
     else:
         None
 
-def get_spatiotemporal_embeddings(pos_tensor, use_timestamp = False, use_only_time = False, concat_xyt=False):
+def get_spatiotemporal_embeddings(pos_tensor, positional_embeddings):
         
         scale = 2 * math.pi
-        if use_only_time:
+        if positional_embeddings == "temporal":
             dim_t = torch.arange(256, dtype=torch.float, device=pos_tensor.device)
             dim_t = 10000 ** (2 * torch.div(dim_t, 2, rounding_mode='floor') / 256)
             t_embed = pos_tensor[:, :, 2] * scale
@@ -163,49 +142,45 @@ def get_spatiotemporal_embeddings(pos_tensor, use_timestamp = False, use_only_ti
         pos_x = torch.stack((pos_x[:, :, 0::2].sin(), pos_x[:, :, 1::2].cos()), dim=3).flatten(2)
         pos_y = torch.stack((pos_y[:, :, 0::2].sin(), pos_y[:, :, 1::2].cos()), dim=3).flatten(2)
 
-        if use_timestamp:
+        if positional_embeddings == "spatial":
+            return torch.cat((pos_y, pos_x), dim=2)
+        elif positional_embeddings == "spatio_temporal":
             t_embed = pos_tensor[:, :, 2] * scale
             pos_t = t_embed[:, :, None] / dim_t
             pos_t[:, :, 0::2][torch.where(pos_t[:, :, 0::2] < 0)] = 0.0
             pos_t[:, :, 1::2][torch.where(pos_t[:, :, 1::2] < 0)] = math.pi/2
             pos_t = torch.stack((pos_t[:, :, 0::2].sin(), pos_t[:, :, 1::2].cos()), dim=3).flatten(2)
-            if concat_xyt:
-                pos = torch.cat((pos_y, pos_x, pos_t), dim=2)
-                return pos
-            pos_x+=pos_t
-            pos_y+=pos_t
-        pos = torch.cat((pos_y, pos_x), dim=2)
-        return pos
+            
+            pos = torch.cat((pos_y, pos_x, pos_t), dim=2)
+            return pos
     
-def get_pos_tensor_coords(batched_fg_coords_list, batched_bg_coords_list, num_queries, height, width, device, batched_max_timestamp=None):
+def get_pos_tensor_coords(fg_coords, bg_coords, num_queries, height, width, device, max_timestamp=None):
 
-    #batched_fg_coords_list: batch x (list of list of fg coords) [y,x,t]
+    #fg_coords: batch x (list of list of fg coords) [y,x,t]
 
     # return
     # points: Bs x num_queries x 3 
-    B = len(batched_fg_coords_list)
+    B = len(fg_coords)
     
     pos_tensor = []
     
-    for i, fg_coords_per_image in enumerate(batched_fg_coords_list):
+    for i, fg_coords_per_image in enumerate(fg_coords):
         coords_per_image  = []
-        if batched_max_timestamp is not None:
-            t = max(batched_max_timestamp[i],500)
+        if max_timestamp is not None:
+            t = max(max_timestamp[i],500)
         for fg_coords_per_mask in fg_coords_per_image:
             for coords in fg_coords_per_mask:
-                if batched_max_timestamp is not None:
+                if max_timestamp is not None:
                     coords_per_image.append([coords[0]/height, coords[1]/width, coords[2]/t])
                 else:
                     coords_per_image.append([coords[0]/height, coords[1]/width, coords[2]])
-        if batched_bg_coords_list[i] is not None:
-            for coords in batched_bg_coords_list[i]:
-                if batched_max_timestamp is not None:
+        if bg_coords[i] is not None:
+            for coords in bg_coords[i]:
+                if max_timestamp is not None:
                     coords_per_image.append([coords[0]/height, coords[1]/width, coords[2]/t])
                 else:
                     coords_per_image.append([coords[0]/height, coords[1]/width, coords[2]])
-                # coords_per_image.append([coords[0]/height, coords[1]/width, coords[2]])
         coords_per_image.extend([[-1.0,-1.0,-1.0]] * (num_queries-len(coords_per_image)))
         pos_tensor.append(torch.tensor(coords_per_image,device=device))
-    # pos_tensor = torch.tensor(pos_tensor,device=device)
     pos_tensor = torch.stack(pos_tensor)
     return pos_tensor

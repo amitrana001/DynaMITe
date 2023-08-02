@@ -3,8 +3,6 @@ import torch
 import numpy as np
 import cv2
 from dynamite.data.points.annotation_generator import create_circular_mask
-# from dynamite.evaluation.eval_utils import prepare_scribbles
-# from dynamite.evaluation.eval_utils import save_visualization
 import os
 def get_palette(num_cls):
     palette = np.zeros(3 * num_cls, dtype=np.int32)
@@ -54,7 +52,7 @@ class Clicker:
         self.mask_features = None
         # self.transformer_encoder_features = None 
         self.multi_scale_features=None
-        self.batched_num_scrbs_per_mask = None
+        self.batched_num_clicks_per_object = None
         self.batched_fg_coords_list = None
         self.batched_bg_coords_list = None
         self.fg_orig_list = []
@@ -97,18 +95,18 @@ class Clicker:
             (processed_results, outputs, self.images,
             self.num_insts, self.features, self.mask_features,
             self.multi_scale_features,
-            self.batched_num_scrbs_per_mask, self.batched_fg_coords_list,
+            self.batched_num_clicks_per_object, self.batched_fg_coords_list,
             self.batched_bg_coords_list) = self.model(self.inputs, batched_max_timestamp=self.batched_max_timestamp)
             # self.device = self.images.tensor.device
         else:
             (processed_results, outputs, self.images, 
             self.num_insts, self.features, self.mask_features,
             self.multi_scale_features,
-            self.batched_num_scrbs_per_mask, self.batched_fg_coords_list,
+            self.batched_num_clicks_per_object, self.batched_fg_coords_list,
             self.batched_bg_coords_list) = self.model(self.inputs, self.images, self.num_insts,
                                                 self.features, self.mask_features,
                                                 self.multi_scale_features,
-                                                self.batched_num_scrbs_per_mask,
+                                                self.batched_num_clicks_per_object,
                                                 self.batched_fg_coords_list, self.batched_bg_coords_list,
                                                 batched_max_timestamp = self.batched_max_timestamp)
         self.device = self.images.tensor.device
@@ -177,7 +175,7 @@ class Clicker:
                 self.batched_bg_coords_list[0] = [[trans_coords[0], trans_coords[1],time_step]]
             self.bg_orig_list.append([coords_y[0],coords_x[0],time_step])
         else:
-            self.batched_num_scrbs_per_mask[0][obj_index] += 1
+            self.batched_num_clicks_per_object[0][obj_index] += 1
             # self.fg_orig_list[0][obj_index].extend([[coords_y[0], coords_x[1],time_step]])
             self.batched_fg_coords_list[0][obj_index].extend([[trans_coords[0], trans_coords[1],time_step]])
             self.fg_orig_list[obj_index].append([coords_y[0], coords_x[0],time_step])
@@ -233,7 +231,7 @@ class Clicker:
             else:
                 self.batched_bg_coords_list[0] = [[trans_coords[0], trans_coords[1],time_step]]
         else:
-            self.batched_num_scrbs_per_mask[0][obj_index] += 1
+            self.batched_num_clicks_per_object[0][obj_index] += 1
             self.batched_fg_coords_list[0][obj_index].extend([[trans_coords[0], trans_coords[1],time_step]])
 
         if self.normalize_time:

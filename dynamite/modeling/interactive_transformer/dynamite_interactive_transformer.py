@@ -22,214 +22,12 @@ from einops import repeat
 from .position_encoding import PositionEmbeddingSine
 from .descriptor_initializer import AvgClicksPoolingInitializer
 from dynamite.utils.train_utils import get_next_clicks, get_pos_tensor_coords, get_spatiotemporal_embeddings
+from .utils import INTERACTIVE_TRANSFORMER_REGISTRY, MLP
+from .encoder import Encoder
+from .decoder import Decoder
 
-TRANSFORMER_DECODER_REGISTRY = Registry("TRANSFORMER_MODULE")
-TRANSFORMER_DECODER_REGISTRY.__doc__ = """
-Registry for transformer module in MaskFormer.
-"""
-
-def build_transformer_decoder(cfg, in_channels):
-    """
-    Build a instance embedding branch from `cfg.MODEL.INS_EMBED_HEAD.NAME`.
-    """
-    name = cfg.MODEL.MASK_FORMER.TRANSFORMER_DECODER_NAME
-    return TRANSFORMER_DECODER_REGISTRY.get(name)(cfg, in_channels)
-
-class SelfAttentionLayer(nn.Module):
-
-    def __init__(self, d_model, nhead, dropout=0.0,
-                 activation="relu", normalize_before=False, attn_map=False):
-        super().__init__()
-        self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
-
-        self.norm = nn.LayerNorm(d_model)
-        self.dropout = nn.Dropout(dropout)
-        self.attn_map = attn_map
-        self.activation = _get_activation_fn(activation)
-        self.normalize_before = normalize_before
-
-        self._reset_parameters()
-    
-    def _reset_parameters(self):
-        for p in self.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
-
-    def with_pos_embed(self, tensor, pos: Optional[Tensor]):
-        return tensor if pos is None else tensor + pos
-
-    def forward_post(self, tgt,
-                     tgt_mask: Optional[Tensor] = None,
-                     tgt_key_padding_mask: Optional[Tensor] = None,
-                     query_pos: Optional[Tensor] = None):
-        q = k = self.with_pos_embed(tgt, query_pos)
-
-        tgt2 = self.self_attn(q, k, value=tgt, attn_mask=tgt_mask,
-                              key_padding_mask=tgt_key_padding_mask)[0]
-        tgt = tgt + self.dropout(tgt2)
-        tgt = self.norm(tgt)
-
-        return tgt
-
-    def forward_pre(self, tgt,
-                    tgt_mask: Optional[Tensor] = None,
-                    tgt_key_padding_mask: Optional[Tensor] = None,
-                    query_pos: Optional[Tensor] = None):
-        tgt2 = self.norm(tgt)
-        q = k = self.with_pos_embed(tgt2, query_pos)
-        tgt2 = self.self_attn(q, k, value=tgt2, attn_mask=tgt_mask,
-                              key_padding_mask=tgt_key_padding_mask)[0]
-        tgt = tgt + self.dropout(tgt2)
-
-        return tgt
-
-    def forward(self, tgt,
-                tgt_mask: Optional[Tensor] = None,
-                tgt_key_padding_mask: Optional[Tensor] = None,
-                query_pos: Optional[Tensor] = None):
-        if self.normalize_before:
-            return self.forward_pre(tgt, tgt_mask,
-                                    tgt_key_padding_mask, query_pos)
-        return self.forward_post(tgt, tgt_mask,
-                                 tgt_key_padding_mask, query_pos)
-
-
-class CrossAttentionLayer(nn.Module):
-
-    def __init__(self, d_model, nhead, dropout=0.0,
-                 activation="relu", normalize_before=False, attn_map=False):
-        super().__init__()
-        self.multihead_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
-
-        self.norm = nn.LayerNorm(d_model)
-        self.dropout = nn.Dropout(dropout)
-        self.attn_map = attn_map
-        self.activation = _get_activation_fn(activation)
-        self.normalize_before = normalize_before
-
-        self._reset_parameters()
-    
-    def _reset_parameters(self):
-        for p in self.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
-
-    def with_pos_embed(self, tensor, pos: Optional[Tensor]):
-        return tensor if pos is None else tensor + pos
-
-    def forward_post(self, tgt, memory,
-                     memory_mask: Optional[Tensor] = None,
-                     memory_key_padding_mask: Optional[Tensor] = None,
-                     pos: Optional[Tensor] = None,
-                     query_pos: Optional[Tensor] = None):
-       
-        tgt2 = self.multihead_attn(query=self.with_pos_embed(tgt, query_pos),
-                                   key=self.with_pos_embed(memory, pos),
-                                   value=memory, attn_mask=memory_mask,
-                                   key_padding_mask=memory_key_padding_mask)[0]
-        tgt = tgt + self.dropout(tgt2)
-        tgt = self.norm(tgt)
-       
-        return tgt
-
-    def forward_pre(self, tgt, memory,
-                    memory_mask: Optional[Tensor] = None,
-                    memory_key_padding_mask: Optional[Tensor] = None,
-                    pos: Optional[Tensor] = None,
-                    query_pos: Optional[Tensor] = None):
-        tgt2 = self.norm(tgt)
-       
-        tgt2 = self.multihead_attn(query=self.with_pos_embed(tgt2, query_pos),
-                                   key=self.with_pos_embed(memory, pos),
-                                   value=memory, attn_mask=memory_mask,
-                                   key_padding_mask=memory_key_padding_mask)[0]
-        tgt = tgt + self.dropout(tgt2)
-
-        return tgt
-
-    def forward(self, tgt, memory,
-                memory_mask: Optional[Tensor] = None,
-                memory_key_padding_mask: Optional[Tensor] = None,
-                pos: Optional[Tensor] = None,
-                query_pos: Optional[Tensor] = None):
-        if self.normalize_before:
-            return self.forward_pre(tgt, memory, memory_mask,
-                                    memory_key_padding_mask, pos, query_pos)
-        return self.forward_post(tgt, memory, memory_mask,
-                                 memory_key_padding_mask, pos, query_pos)
-
-
-class FFNLayer(nn.Module):
-
-    def __init__(self, d_model, dim_feedforward=2048, dropout=0.0,
-                 activation="relu", normalize_before=False):
-        super().__init__()
-        # Implementation of Feedforward model
-        self.linear1 = nn.Linear(d_model, dim_feedforward)
-        self.dropout = nn.Dropout(dropout)
-        self.linear2 = nn.Linear(dim_feedforward, d_model)
-
-        self.norm = nn.LayerNorm(d_model)
-
-        self.activation = _get_activation_fn(activation)
-        self.normalize_before = normalize_before
-
-        self._reset_parameters()
-    
-    def _reset_parameters(self):
-        for p in self.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
-
-    def with_pos_embed(self, tensor, pos: Optional[Tensor]):
-        return tensor if pos is None else tensor + pos
-
-    def forward_post(self, tgt):
-        tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt))))
-        tgt = tgt + self.dropout(tgt2)
-        tgt = self.norm(tgt)
-        return tgt
-
-    def forward_pre(self, tgt):
-        tgt2 = self.norm(tgt)
-        tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt2))))
-        tgt = tgt + self.dropout(tgt2)
-        return tgt
-
-    def forward(self, tgt):
-        if self.normalize_before:
-            return self.forward_pre(tgt)
-        return self.forward_post(tgt)
-
-
-def _get_activation_fn(activation):
-    """Return an activation function given a string"""
-    if activation == "relu":
-        return F.relu
-    if activation == "gelu":
-        return F.gelu
-    if activation == "glu":
-        return F.glu
-    raise RuntimeError(F"activation should be relu/gelu, not {activation}.")
-
-
-class MLP(nn.Module):
-    """ Very simple multi-layer perceptron (also called FFN)"""
-
-    def __init__(self, input_dim, hidden_dim, output_dim, num_layers):
-        super().__init__()
-        self.num_layers = num_layers
-        h = [hidden_dim] * (num_layers - 1)
-        self.layers = nn.ModuleList(nn.Linear(n, k) for n, k in zip([input_dim] + h, h + [output_dim]))
-
-    def forward(self, x):
-        for i, layer in enumerate(self.layers):
-            x = F.relu(layer(x)) if i < self.num_layers - 1 else layer(x)
-        return x
-
-
-@TRANSFORMER_DECODER_REGISTRY.register()
-class InteractiveTransformerDecoder(nn.Module):
+@INTERACTIVE_TRANSFORMER_REGISTRY.register()
+class DynamiteInteractiveTransformer(nn.Module):
 
     _version = 2
 
@@ -239,15 +37,18 @@ class InteractiveTransformerDecoder(nn.Module):
         in_channels,
         *,
         max_num_interactions: int,
-        use_rev_cross_attn: bool,
-        rev_cross_attn_num_layers: int,
-        rev_cross_attn_scale: float,
+        # use_rev_cross_attn: bool,
+        # rev_cross_attn_num_layers: int,
+        # rev_cross_attn_scale: float,
+        use_decoder, 
+        dec_layers,
+        dec_scale_factor,
         use_static_bg_queries: bool,
         num_static_bg_queries: int,
         hidden_dim: int,
         nheads: int,
         dim_feedforward: int,
-        dec_layers: int,
+        enc_layers: int,
         pre_norm: bool,
         mask_dim: int,
         enforce_input_project: bool,
@@ -281,73 +82,17 @@ class InteractiveTransformerDecoder(nn.Module):
         self.num_static_bg_queries = num_static_bg_queries
         
         # Reverse Cross Attn
-        self.use_rev_cross_attn = use_rev_cross_attn
-        self.rev_cross_attn_num_layers = rev_cross_attn_num_layers
-        self.rev_cross_attn_scale = rev_cross_attn_scale
+        self.use_decoder = use_decoder
+        self.dec_layers = dec_layers
+        self.dec_scale_factor = dec_scale_factor
 
-        # define Transformer decoder here
         self.num_heads = nheads
-        self.num_layers = dec_layers
-        self.transformer_self_attention_layers = nn.ModuleList()
-        self.transformer_cross_attention_layers = nn.ModuleList()
-        self.transformer_ffn_layers = nn.ModuleList()
-
-        # self.use_mlp_rev_attn = use_mlp_rev_attn
-        if self.use_rev_cross_attn:
-            self.rev_cross_attn_layers = nn.ModuleList()
-            for _ in range(self.rev_cross_attn_num_layers):
-                self.rev_cross_attn_layers.append(
-                    CrossAttentionLayer(
-                        d_model=hidden_dim,
-                        nhead=nheads,
-                        dropout=0.0,
-                        normalize_before=pre_norm,
-                    )
-                )
-            # if self.use_mlp_rev_attn:
-            self.rev_cross_attn_ffn_layers = nn.ModuleList()
-            for _ in range(self.rev_cross_attn_num_layers):
-                self.rev_cross_attn_ffn_layers.append(
-                    FFNLayer(
-                    d_model=hidden_dim,
-                    dim_feedforward=hidden_dim*2,
-                    dropout=0.0,
-                    normalize_before=pre_norm,
-                )
-            )
-            # positional encoding for mask features
-            N_steps = hidden_dim // 2
-            self.pe_mask_features = PositionEmbeddingSine(N_steps, normalize=True)
-
-        for _ in range(self.num_layers):
-            self.transformer_self_attention_layers.append(
-                SelfAttentionLayer(
-                    d_model=hidden_dim,
-                    nhead=nheads,
-                    dropout=0.0,
-                    normalize_before=pre_norm,
-                )
-            )
-
-            self.transformer_cross_attention_layers.append(
-                CrossAttentionLayer(
-                    d_model=hidden_dim,
-                    nhead=nheads,
-                    dropout=0.0,
-                    normalize_before=pre_norm,
-                )
-            )
-
-            self.transformer_ffn_layers.append(
-                FFNLayer(
-                    d_model=hidden_dim,
-                    dim_feedforward=dim_feedforward,
-                    dropout=0.0,
-                    normalize_before=pre_norm,
-                )
-            )
-
-        self.decoder_norm = nn.LayerNorm(hidden_dim)
+        self.enc_layers = enc_layers
+        self.encoder = Encoder(hidden_dim, dim_feedforward, nheads, self.enc_layers, pre_norm)
+        if self.use_decoder:
+            self.decoder = Decoder(hidden_dim, nheads, self.dec_layers, pre_norm)
+        
+        self.layer_norm = nn.LayerNorm(hidden_dim)
 
         self.query_descriptors_initializer = AvgClicksPoolingInitializer()
         
@@ -369,9 +114,9 @@ class InteractiveTransformerDecoder(nn.Module):
         if self.use_static_bg_queries:
             self.register_parameter("static_bg_pe", nn.Parameter(torch.zeros(self.num_static_bg_queries, hidden_dim), True))
             self.register_parameter("static_bg_query", nn.Parameter(torch.zeros(self.num_static_bg_queries,hidden_dim), True))
-            self.register_parameter("bg_query", nn.Parameter(torch.zeros(hidden_dim), False))
-        else:
-            self.register_parameter("bg_query", nn.Parameter(torch.zeros(hidden_dim), False))
+        #     self.register_parameter("bg_query", nn.Parameter(torch.zeros(hidden_dim), False))
+        # else:
+        self.register_parameter("bg_query", nn.Parameter(torch.zeros(hidden_dim), False))
 
         # level embedding (we always use 3 scales)
         self.num_feature_levels = 3
@@ -403,10 +148,15 @@ class InteractiveTransformerDecoder(nn.Module):
         ret["nheads"] = cfg.MODEL.MASK_FORMER.NHEADS
         ret["dim_feedforward"] = cfg.MODEL.MASK_FORMER.DIM_FEEDFORWARD
 
-        # Reverse Cross Attention
-        ret["use_rev_cross_attn"] = cfg.REVERSE_CROSS_ATTN.USE_REVERSE_CROSS_ATTN
-        ret["rev_cross_attn_num_layers"] = cfg.REVERSE_CROSS_ATTN.NUM_LAYERS
-        ret["rev_cross_attn_scale"] = cfg.REVERSE_CROSS_ATTN.SCALE_FACTOR
+        # DECODER
+        ret["use_decoder"] =  cfg.MODEL.MASK_FORMER.DECODER.USE_DECODER
+ 
+        ret["dec_layers"] = cfg.MODEL.MASK_FORMER.DECODER.DEC_LAYERS
+        ret["dec_scale_factor"] = cfg.MODEL.MASK_FORMER.DECODER.DEC_SCALE_FACTOR
+
+        # ret["use_rev_cross_attn"] = cfg.REVERSE_CROSS_ATTN.USE_REVERSE_CROSS_ATTN
+        # ret["rev_cross_attn_num_layers"] = cfg.REVERSE_CROSS_ATTN.NUM_LAYERS
+        # ret["rev_cross_attn_scale"] = cfg.REVERSE_CROSS_ATTN.SCALE_FACTOR
 
         # Iterative Pipeline
         ret["max_num_interactions"] = cfg.ITERATIVE.TRAIN.MAX_NUM_INTERACTIONS
@@ -419,8 +169,8 @@ class InteractiveTransformerDecoder(nn.Module):
         # implementation: that is, number of auxiliary losses is always
         # equal to number of decoder layers. With learnable query features, the number of
         # auxiliary losses equals number of decoders plus 1.
-        assert cfg.MODEL.MASK_FORMER.DEC_LAYERS >= 1
-        ret["dec_layers"] = cfg.MODEL.MASK_FORMER.DEC_LAYERS - 1
+        assert cfg.MODEL.MASK_FORMER.ENC_LAYERS >= 1
+        ret["enc_layers"] = cfg.MODEL.MASK_FORMER.ENC_LAYERS - 1
         ret["pre_norm"] = cfg.MODEL.MASK_FORMER.PRE_NORM
         ret["enforce_input_project"] = cfg.MODEL.MASK_FORMER.ENFORCE_INPUT_PROJ
 
@@ -487,7 +237,7 @@ class InteractiveTransformerDecoder(nn.Module):
         return outputs, num_clicks_per_object
 
     def forward_prediction_heads(self, output, mask_features, attn_mask_target_size):
-        decoder_output = self.decoder_norm(output)
+        decoder_output = self.layer_norm(output)
         decoder_output = decoder_output.transpose(0, 1)
 
         mask_embed = self.mask_embed(decoder_output)
@@ -553,25 +303,25 @@ class InteractiveTransformerDecoder(nn.Module):
         outputs_mask, attn_mask = self.forward_prediction_heads(output, mask_features, attn_mask_target_size=size_list[0])
         predictions_mask.append(outputs_mask)
 
-        for i in range(self.num_layers):
+        for i in range(self.enc_layers):
             level_index = i % self.num_feature_levels
             attn_mask[torch.where(attn_mask.sum(-1) == attn_mask.shape[-1])] = False
             # attention: cross-attention first
-            output = self.transformer_cross_attention_layers[i](
+            output = self.encoder.cross_attention_layers[i](
                 output, src[level_index],
                 memory_mask=attn_mask,
                 memory_key_padding_mask=None,  # here we do not apply masking on padded region
                 pos=pos[level_index], query_pos=query_embed
             )
 
-            output = self.transformer_self_attention_layers[i](
+            output = self.encoder.self_attention_layers[i](
                 output, tgt_mask=None,
                 tgt_key_padding_mask=None,
                 query_pos=query_embed
             )
             
             # FFN
-            output = self.transformer_ffn_layers[i](
+            output = self.encoder.ffn_layers[i](
                 output
             )
 
@@ -580,29 +330,30 @@ class InteractiveTransformerDecoder(nn.Module):
 
         # assert len(predictions_class) == self.num_layers + 1
 
-        if self.use_rev_cross_attn:
-            if self.rev_cross_attn_scale > 1:
-                scale_factor = self.rev_cross_attn_scale
+        if self.use_decoder:
+            if self.dec_scale_factor > 1:
+                scale_factor = self.dec_scale_factor
                 mask_features = F.interpolate(mask_features, scale_factor=scale_factor, mode='bilinear', align_corners=False)
             
-            with torch.no_grad():
-                pos_encodings = self.pe_mask_features(mask_features)
-                pos_encodings = einops.rearrange(pos_encodings,"B C H W -> (H W) B C")
+            # with torch.no_grad():
+            #     pos_encodings = self.pe_mask_features(mask_features)
+            #     pos_encodings = einops.rearrange(pos_encodings,"B C H W -> (H W) B C")
 
-            B, C, H, W = mask_features.shape
-            mask_features = einops.rearrange(mask_features,"B C H W -> (H W) B C")
+            # B, C, H, W = mask_features.shape
+            # mask_features = einops.rearrange(mask_features,"B C H W -> (H W) B C")
 
-            #output is QxNxC
-            # if self.use_mlp_rev_attn:
-            for i in range(self.rev_cross_attn_num_layers):
-                mask_features = self.rev_cross_attn_layers[i](
-                    mask_features, output,
-                    memory_mask=None,
-                    memory_key_padding_mask=None, 
-                    pos=query_embed, query_pos=pos_encodings
-                )
-                mask_features = self.rev_cross_attn_ffn_layers[i](mask_features)
+            # #output is QxNxC
+            # # if self.use_mlp_rev_attn:
+            # for i in range(self.dec_layers):
+            #     mask_features = self.decoder.cross_attention_layers[i](
+            #         mask_features, output,
+            #         memory_mask=None,
+            #         memory_key_padding_mask=None, 
+            #         pos=query_embed, query_pos=pos_encodings
+            #     )
+            #     mask_features = self.decoder.ffn_layers[i](mask_features)
             
+            mask_features = self.decoder((mask_features, output, query_embed))
             mask_features = einops.rearrange(mask_features,"(H W) B C -> B C H W", H=H, W=W, B=B).contiguous()
             outputs_mask, attn_mask = self.forward_prediction_heads(output, mask_features, attn_mask_target_size=size_list[(i + 1) % self.num_feature_levels])
             predictions_mask.append(outputs_mask)
