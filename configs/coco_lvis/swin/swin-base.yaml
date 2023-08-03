@@ -18,7 +18,7 @@ MODEL:
     # TRANSFORMER_DECODER_NAME: "InteractiveTransformerDecoder"
     INTERACTIVE_TRANSFORMER_NAME: "DynamiteInteractiveTransformer"
     TRANSFORMER_IN_FEATURE: "multi_scale_pixel_decoder"
-    QUERY_INITIALIZER: "multi_scale" # OR single_scale
+    # QUERY_INITIALIZER: "multi_scale" # OR single_scale
     DEEP_SUPERVISION: True
     MASK_WEIGHT: 5.0
     DICE_WEIGHT: 5.0

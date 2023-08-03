@@ -73,21 +73,10 @@ class DynamiteModel(nn.Module):
         # loss weights
         dice_weight = cfg.MODEL.MASK_FORMER.DICE_WEIGHT
         mask_weight = cfg.MODEL.MASK_FORMER.MASK_WEIGHT
-
-       
+     
         # building criterion
-
         weight_dict = {"loss_mask": mask_weight, "loss_dice": dice_weight}
         losses = ["masks"]
-
-        
-        if deep_supervision:
-            enc_layers = cfg.MODEL.MASK_FORMER.ENC_LAYERS
-            aux_weight_dict = {}
-            for i in range(enc_layers - 1):
-                aux_weight_dict.update({k + f"_{i}": v for k, v in weight_dict.items()})
-            weight_dict.update(aux_weight_dict)
-
 
         criterion = SetFinalCriterion(
             weight_dict=weight_dict,
@@ -96,6 +85,13 @@ class DynamiteModel(nn.Module):
             oversample_ratio=cfg.MODEL.MASK_FORMER.OVERSAMPLE_RATIO,
             importance_sample_ratio=cfg.MODEL.MASK_FORMER.IMPORTANCE_SAMPLE_RATIO,
         )
+
+        if deep_supervision:
+            enc_layers = cfg.MODEL.MASK_FORMER.ENC_LAYERS
+            aux_weight_dict = {}
+            for i in range(enc_layers - 1):
+                aux_weight_dict.update({k + f"_{i}": v for k, v in weight_dict.items()})
+            weight_dict.update(aux_weight_dict)
 
         return {
             "backbone": backbone,
@@ -137,7 +133,6 @@ class DynamiteModel(nn.Module):
         if (images is None) or (num_clicks_per_object is None) or (fg_coords is None):        
             (images, num_instances, num_clicks_per_object,
             fg_coords, bg_coords) = self.preprocess_batch_data(inputs)
-                # num_instances = num_instances
         if features is None:
             features = self.backbone(images.tensor)
 

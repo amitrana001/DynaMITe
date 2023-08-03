@@ -31,83 +31,8 @@ def get_palette(num_cls):
     return palette.reshape((-1, 3))
 color_map = get_palette(80)[1:]
 
-def compute_iou(gt_masks, pred_masks, ious, iou_threshold, ignore_masks=None):
-
-    if ignore_masks is None:
-        for i in range(len(ious)):
-            intersection = (gt_masks[i] * pred_masks[i]).sum()
-            union = torch.logical_or(gt_masks[i], pred_masks[i]).to(torch.int).sum()
-            # if ious[i] < iou_threshold:
-            #     ious[i]= intersection/union
-            # else:
-            #     ious[i]= max(intersection/union, ious[i])
-            ious[i] = intersection/union
-            # print(ious)
-        return ious
-
-    for i in range(len(ious)):
-        # intersection = (gt_masks[i] * pred_masks[i]).sum()
-        # union = torch.logical_or(gt_masks[i], pred_masks[i]).to(torch.int).sum()
-        n_iou = get_iou_per_mask(gt_masks[i], pred_masks[i], ignore_masks[i])
-        ious[i] = n_iou
-        # if ious[i] < iou_threshold:
-        #     ious[i]= n_iou
-        # else:
-        #     ious[i]= max(n_iou, ious[i])
-    # print(ious)
-    return ious
-
-def get_iou_per_mask(gt_mask, pred_mask, ignore_mask):
-    # ignore_gt_mask_inv = gt_mask != ignore_label
-    ignore_gt_mask_inv = ~(ignore_mask.to(dtype=torch.bool))
-    # ignore_gt_mask_inv = 
-    obj_gt_mask = gt_mask
-
-    intersection = torch.logical_and(torch.logical_and(pred_mask, obj_gt_mask), ignore_gt_mask_inv).sum()
-    union = torch.logical_and(torch.logical_or(pred_mask, obj_gt_mask), ignore_gt_mask_inv).sum()
-
-    return intersection / union
-
-def save_visualization(inputs, pred_masks, scribbles, dir_path, iou, num_iter,  alpha_blend=0.3):
-    
-    image = np.asarray(inputs['image'].permute(1,2,0))
-
-    visualizer = Visualizer(image, metadata=None)
-    pred_masks = F.resize(pred_masks.to(dtype=torch.uint8), image.shape[:2])
-    c = []
-    for i in range(pred_masks.shape[0]):
-        # c.append(color_map[2*(i)+2]/255.0)
-        c.append(color_map[i]/255.0)
-    # pred_masks = np.asarray(pred_masks).astype(np.bool_)
-    vis = visualizer.overlay_instances(masks = pred_masks, assigned_colors=c, alpha=alpha_blend)
-    # [Optional] prepare labels
-
-    image = vis.get_image()
-    # # Laminate your image!
-    total_colors = len(color_map)-1
-    
-    h,w = image.shape[:2]
-    for i, scrb in enumerate(scribbles[:-1]):
-        scrb = torch.max(scrb,0).values.to('cpu')
-        scrb = scrb[:h, :w]
-        color = np.array(color_map[total_colors-5*i-4], dtype=np.uint8)
-        image[scrb>0.5, :] = np.array(color, dtype=np.uint8)
-        
-    if scribbles[-1] is not None:
-        scrb = torch.max(scribbles[-1],0).values.to('cpu')
-        scrb = scrb[:h, :w]
-        color = np.array([255,0,0], dtype=np.uint8)
-        image[scrb>0.5, :] = np.array(color, dtype=np.uint8)
-
-    image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-    image = cv2.resize(image, (inputs["width"],inputs["height"]))
-    save_dir = os.path.join(dir_path, str(inputs['image_id']))
-    os.makedirs(save_dir, exist_ok=True)
-    cv2.imwrite(os.path.join(save_dir, f"iter_{num_iter}_{np.round(iou,4)}.jpg"), image)
-
 def get_gt_clicks_coords_eval_orig(masks, image_shape, max_num_points=1, ignore_masks=None,
-                                   radius_size=5, first_click_center=True, t= 0, 
-                                   unique_timestamp=False, use_point_features=False):
+                                   first_click_center=True, t= 0):
 
     """
     :param masks: numpy array of shape I x H x W
@@ -125,31 +50,25 @@ def get_gt_clicks_coords_eval_orig(masks, image_shape, max_num_points=1, ignore_
     num_clicks_per_object = [0]*I
     orig_fg_coords_list = []
     fg_coords_list = []
-    fg_point_masks = []
+    # fg_point_masks = []
     for i, (_m) in enumerate(masks):
         orig_coords = []
         coords = []
-        point_masks_per_obj = []
+        # point_masks_per_obj = []
         if first_click_center:
             if ignore_masks is not None:
                 _m = np.logical_and(_m, not_ignores_mask[i]).astype(np.uint8)
             center_coords = get_max_dt_point_mask(_m, max_num_pts=max_num_points)
-            # center_coords.append(t)
-            if not use_point_features:
-                _pm = create_circular_mask(H, W, centers=[center_coords], radius=radius_size)
-                point_masks_per_obj.append(_pm)
+           
             orig_coords.append([center_coords[0], center_coords[1], t])
             coords.append([center_coords[0]*ratio_h, center_coords[1]*ratio_w, t])
-            if unique_timestamp:
-                t+=1
+            # if unique_timestamp:
+            t+=1
             num_clicks_per_object[i]+=1
         orig_fg_coords_list.append(orig_coords) 
         fg_coords_list.append(coords)
-        if not use_point_features:
-            fg_point_masks.append(torch.from_numpy(np.stack(point_masks_per_obj, axis=0)).to(torch.uint8))
-        # else:
-        #     fg_point_masks = None
-    return num_clicks_per_object, fg_coords_list, None, fg_point_masks, None, orig_fg_coords_list
+       
+    return num_clicks_per_object, fg_coords_list, orig_fg_coords_list
 
 
 def log_single_instance(res, max_interactions, dataset_name, model_name, ablation=False, save_summary_stats=False):

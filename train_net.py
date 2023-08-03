@@ -32,10 +32,11 @@ from detectron2.config import get_cfg
 from detectron2.data import build_detection_train_loader, build_detection_test_loader
 from detectron2.engine import (
     DefaultTrainer,
-    default_argument_parser,
+    # default_argument_parser,
     default_setup,
     launch,
 )
+from dynamite.utils.misc import default_argument_parser
 # from dynamite.evaluation.single_instance_evaluation import get_avg_noc
 
 from detectron2.projects.deeplab import add_deeplab_config, build_lr_scheduler
@@ -58,7 +59,7 @@ from dynamite import (
     add_hrnet_config
 )
 
-from dynamite.inference.eval_utils import log_single_instance, log_multi_instance
+from dynamite.inference.utils.eval_utils import log_single_instance, log_multi_instance
 
 class Trainer(DefaultTrainer):
     """
@@ -181,7 +182,7 @@ class Trainer(DefaultTrainer):
         return optimizer
 
     @classmethod
-    def test(cls, cfg, model, evaluators=None):
+    def interactive_evaluation(cls, cfg, args, model):
         """
         Evaluate the given model. The given model is expected to already contain
         weights to evaluate.
@@ -197,43 +198,35 @@ class Trainer(DefaultTrainer):
             dict: a dict of result metrics
         """
         logger = logging.getLogger(__name__)
-        if isinstance(evaluators, DatasetEvaluator):
-            evaluators = [evaluators]
-        if evaluators is not None:
-            assert len(cfg.DATASETS.TEST) == len(evaluators), "{} != {}".format(
-                len(cfg.DATASETS.TEST), len(evaluators)
-            )
+       
+        if args.eval_only:
+            eval_datasets = args.eval_datasets
+            vis_path = args.vis_path
+            eval_strategy = args.eval_strategy
+            seed_id = args.seed_id
+        else:
+            eval_datasets = cfg.DATASETS.TEST
+            vis_path = None
+            eval_strategy = "random"
+            seed_id = 0
+        
+        for dataset_name in eval_datasets:
 
-        results = OrderedDict()
-        for idx, dataset_name in enumerate(cfg.DATASETS.TEST):
-            max_interactions = 10
-            iou_threshold = 0.85
-            data_loader = cls.build_test_loader(cfg, dataset_name)
+            if dataset_name in ["GrabCut", "Berkeley", "davis_single_inst", "coco_Mval", 'sbd_single_inst']:
+                from dynamite.inference.single_instance.single_instance_inference import get_avg_noc
+                data_loader = cls.build_test_loader(cfg, dataset_name)
+                
+                evaluator =None
             
-            evaluator =None
-            if dataset_name in ["coco_2017_val", "davis_2017_val", "sbd_multi_insts"]:
-                model_name = cfg.MODEL.WEIGHTS.split("/")[-2]
-                from dynamite.inference.max_dt import evaluate
-                results_i = evaluate(model, data_loader,cfg, dataset_name)
-                results_i = comm.gather(results_i, dst=0)  # [res1:dict, res2:dict,...]
-                if comm.is_main_process():
-                    # sum the values with same keys
-                    assert len(results_i) > 0
-                    res_gathered = results_i[0]
-                    results_i.pop(0)
-                    for _d in results_i:
-                        for k in _d.keys():
-                            res_gathered[k] += _d[k]
-                    log_multi_instance(res_gathered, max_interactions=max_interactions,
-                                        dataset_name=dataset_name, model_name=model_name)
-            else:
                 max_interactions = 20
                 iou_threshold = [0.90]
-                from dynamite.inference.single_instance_evaluation_coords import get_avg_noc
+                
                 for iou in iou_threshold:
-                    for s in range(3):
-                        # model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + f"_S{s}"
-                        model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + cfg.MODEL.WEIGHTS.split("/")[-1][5:-4] + f"_S{s}"
+                    for s in range(0,2):
+                
+                        # model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + cfg.MODEL.WEIGHTS.split("/")[-1][5:-4] + f"_S{s}"
+                        # model_name += "_V1"
+                        model_name = cfg.MODEL.WEIGHTS
                         results_i = get_avg_noc(model, data_loader, cfg, iou_threshold = iou,
                                                 dataset_name=dataset_name,sampling_strategy=s,
                                                 max_interactions=max_interactions)
@@ -246,31 +239,37 @@ class Trainer(DefaultTrainer):
                             for _d in results_i:
                                 for k in _d.keys():
                                     res_gathered[k] += _d[k]
-                            # res_gathered = dict(
-                            #     functools.reduce(operator.iconcat,
-                            #                      map(collections.Counter, results_i))
-                            # )
-                            # print_csv_format(res_gathered)
                             log_single_instance(res_gathered, max_interactions=max_interactions,
-                                                dataset_name=dataset_name, model_name=model_name)
-
-        return {}
-
-    @classmethod
-    def test_with_TTA(cls, cfg, model):
-        logger = logging.getLogger("detectron2.trainer")
-        # In the end of training, run an evaluation with TTA.
-        logger.info("Running inference with test-time augmentation ...")
-        model = SemanticSegmentorWithTTA(cfg, model)
-        evaluators = [
-            cls.build_evaluator(
-                cfg, name, output_folder=os.path.join(cfg.OUTPUT_DIR, "inference_TTA")
-            )
-            for name in cfg.DATASETS.TEST
-        ]
-        res = cls.test(cfg, model, evaluators)
-        res = OrderedDict({k + "_TTA": v for k, v in res.items()})
-        return res
+                                                dataset_name=dataset_name, model_name=model_name,save_summary_stats=False)
+            elif dataset_name in ["davis_2017_val","sbd_multi_insts","coco_2017_val"]:
+                
+                if eval_strategy in ["random", "best", "worst"]:
+                    from dynamite.inference.multi_instance.random_best_worst import evaluate
+                elif eval_strategy == "max_dt":
+                    from dynamite.inference.multi_instance.max_dt import evaluate
+                elif eval_strategy == "wlb":
+                    from dynamite.inference.multi_instance.wlb import evaluate
+                elif eval_strategy == "round_robin":
+                    from dynamite.inference.multi_instance.round_robin import evaluate
+                
+                data_loader = cls.build_test_loader(cfg, dataset_name)
+                
+                model_name = cfg.MODEL.WEIGHTS
+                results_i = evaluate(model, data_loader,cfg, dataset_name, sampling_strategy=1,
+                                    iou_threshold = 0.85, max_interactions = 10,
+                                    eval_strategy = eval_strategy,seed_id=seed_id)
+                results_i = comm.gather(results_i, dst=0)  # [res1:dict, res2:dict,...]
+                if comm.is_main_process():
+                    # sum the values with same keys
+                    assert len(results_i) > 0
+                    res_gathered = results_i[0]
+                    results_i.pop(0)
+                    for _d in results_i:
+                        for k in _d.keys():
+                            res_gathered[k] += _d[k]
+                    log_multi_instance(res_gathered, max_interactions=10,
+                                    dataset_name=dataset_name, model_name=model_name,
+                                    sampling_strategy=1)
 
 
 def setup(args):
@@ -304,7 +303,8 @@ def main(args):
         DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
             cfg.MODEL.WEIGHTS, resume=args.resume
         )
-        res = Trainer.test(cfg, model)
+        # res = Trainer.test(cfg, model)
+        res = Trainer.interactive_evaluation(cfg,args,model)
 
         return res
 

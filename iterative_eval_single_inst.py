@@ -32,11 +32,12 @@ from detectron2.config import get_cfg
 from detectron2.data import build_detection_train_loader, build_detection_test_loader
 from detectron2.engine import (
     DefaultTrainer,
-    default_argument_parser,
+    # default_argument_parser,
     default_setup,
     launch,
 )
-from dynamite.evaluation.single_instance_evaluation import get_avg_noc
+from dynamite.utils.misc import default_argument_parser
+# from dynamite.inference.single_instance_evaluation import get_avg_noc
 
 from detectron2.projects.deeplab import add_deeplab_config, build_lr_scheduler
 from detectron2.solver.build import maybe_add_gradient_clipping
@@ -53,13 +54,13 @@ from dynamite import (
 )
 
 from dynamite import (
-    COCOMvalDatasetMapper,
+    # COCOMvalDatasetMapper,
     SemanticSegmentorWithTTA,
     add_maskformer2_config,
     add_hrnet_config
 )
 
-from dynamite.evaluation.eval_utils import log_single_instance, log_multi_instance
+from dynamite.inference.eval_utils import log_single_instance, log_multi_instance
 
 class Trainer(DefaultTrainer):
     """
@@ -205,7 +206,7 @@ class Trainer(DefaultTrainer):
             )
 
         results = OrderedDict()
-        from dynamite.inference.single_instance_inference_V1 import get_avg_noc
+        from dynamite.inference.single_instance_inference import get_avg_noc
         for dataset_name in ["GrabCut", "Berkeley", "davis_single_inst", "coco_Mval", 'sbd_single_inst']:
         # for dataset_name in ["coco_Mval"]:
             data_loader = cls.build_test_loader(cfg, dataset_name)
@@ -218,11 +219,12 @@ class Trainer(DefaultTrainer):
             for iou in iou_threshold:
                 for s in range(1,2):
             
-                    model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + cfg.MODEL.WEIGHTS.split("/")[-1][5:-4] + f"_S{s}"
-                    model_name += "_V1"
+                    # model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + cfg.MODEL.WEIGHTS.split("/")[-1][5:-4] + f"_S{s}"
+                    # model_name += "_V1"
+                    model_name = cfg.MODEL.WEIGHTS
                     results_i = get_avg_noc(model, data_loader, cfg, iou_threshold = iou,
                                             dataset_name=dataset_name,sampling_strategy=s,
-                                            max_interactions=max_interactions,normalize_time=True)
+                                            max_interactions=max_interactions)
                     results_i = comm.gather(results_i, dst=0)  # [res1:dict, res2:dict,...]
                     if comm.is_main_process():
                         # sum the values with same keys
@@ -259,22 +261,12 @@ def setup(args):
     Create configs and perform basic setups.
     """
     cfg = get_cfg()
-    # for poly lr schedule
-    cfg.EVALUATION_STRATEGY = CN()
-    cfg.EVALUATION_STRATEGY.TYPE = None
-    cfg.EVALUATION_STRATEGY.NORMALIZE_TIME = False
+    
     add_deeplab_config(cfg)
     add_maskformer2_config(cfg)
     add_hrnet_config(cfg)
     cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
-    # if args.eval_only:
-    #     cfg.SEED = 46699430
-    # cfg.OUTPUT_DIR = "./all_data/new_models/class_agnostic"
-    cfg.ITERATIVE.TRAIN.USE_ARGMAX = True
-    # cfg.EVALUATION_STRATEGY = CN()
-    cfg.EVALUATION_STRATEGY.NORMALIZE_TIME = True
-    cfg.EVALUATION_STRATEGY.TYPE = None
     cfg.freeze()
     default_setup(cfg, args)
     # Setup logger for "mask_former" module

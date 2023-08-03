@@ -37,9 +37,6 @@ class DynamiteInteractiveTransformer(nn.Module):
         in_channels,
         *,
         max_num_interactions: int,
-        # use_rev_cross_attn: bool,
-        # rev_cross_attn_num_layers: int,
-        # rev_cross_attn_scale: float,
         use_decoder, 
         dec_layers,
         dec_scale_factor,
@@ -114,8 +111,6 @@ class DynamiteInteractiveTransformer(nn.Module):
         if self.use_static_bg_queries:
             self.register_parameter("static_bg_pe", nn.Parameter(torch.zeros(self.num_static_bg_queries, hidden_dim), True))
             self.register_parameter("static_bg_query", nn.Parameter(torch.zeros(self.num_static_bg_queries,hidden_dim), True))
-        #     self.register_parameter("bg_query", nn.Parameter(torch.zeros(hidden_dim), False))
-        # else:
         self.register_parameter("bg_query", nn.Parameter(torch.zeros(hidden_dim), False))
 
         # level embedding (we always use 3 scales)
@@ -150,13 +145,8 @@ class DynamiteInteractiveTransformer(nn.Module):
 
         # DECODER
         ret["use_decoder"] =  cfg.MODEL.MASK_FORMER.DECODER.USE_DECODER
- 
         ret["dec_layers"] = cfg.MODEL.MASK_FORMER.DECODER.DEC_LAYERS
         ret["dec_scale_factor"] = cfg.MODEL.MASK_FORMER.DECODER.DEC_SCALE_FACTOR
-
-        # ret["use_rev_cross_attn"] = cfg.REVERSE_CROSS_ATTN.USE_REVERSE_CROSS_ATTN
-        # ret["rev_cross_attn_num_layers"] = cfg.REVERSE_CROSS_ATTN.NUM_LAYERS
-        # ret["rev_cross_attn_scale"] = cfg.REVERSE_CROSS_ATTN.SCALE_FACTOR
 
         # Iterative Pipeline
         ret["max_num_interactions"] = cfg.ITERATIVE.TRAIN.MAX_NUM_INTERACTIONS
@@ -187,9 +177,6 @@ class DynamiteInteractiveTransformer(nn.Module):
         pos = []
         size_list = []
 
-        # disable mask, it does not affect performance
-        # del mask
-
         for i in range(self.num_feature_levels):
             size_list.append(x[i].shape[-2:])
             pos.append(self.pe_layer(x[i], None).flatten(2))
@@ -204,21 +191,21 @@ class DynamiteInteractiveTransformer(nn.Module):
             prev_output = None
             num_iters = random.randint(0,self.max_num_interactions)
             
-            max_timestamp = None
-            # if self.unique_timestamp:
-            max_timestamp = []
-            bs = len(num_clicks_per_object)
-            for j in range(bs):
-                if bg_coords[j]:
-                    max_timestamp.append(bg_coords[j][-1][2])
-                else:
-                    max_timestamp.append(fg_coords[j][-1][-1][2])
+            if max_timestamp is None:
+                # max_timestamp = None
+                # if self.unique_timestamp:
+                max_timestamp = []
+                bs = len(num_clicks_per_object)
+                for j in range(bs):
+                    if bg_coords[j]:
+                        max_timestamp.append(bg_coords[j][-1][2])
+                    else:
+                        max_timestamp.append(fg_coords[j][-1][-1][2])
 
             for i in range(num_iters):
                 prev_output = self.iterative_batch_forward(x, src, pos, size_list, mask_features, fg_coords, 
                                                             bg_coords, max_timestamp
                 )
-                # prev_mask_logits = prev_output['pred_masks']
                 processed_results = self.process_results(data, images, prev_output, num_instances, num_clicks_per_object)
                                 
                 next_coords_info = get_next_clicks(data, processed_results,i+1, num_clicks_per_object,fg_coords, 
@@ -289,8 +276,6 @@ class DynamiteInteractiveTransformer(nn.Module):
             static_bg_queries = repeat(self.static_bg_query, "Bg C -> N Bg C", N=bs)
             output = torch.cat((output,static_bg_queries), dim=1)
     
-        # num_scrbs = output.shape[0]
-        Bs, num_scrbs, _ = output.shape
         # NxQxC -> QxNxC
         output = self.queries_nonlinear_projection(output).permute(1,0,2)
         # query positional embedding QxNxC
@@ -328,31 +313,12 @@ class DynamiteInteractiveTransformer(nn.Module):
             outputs_mask, attn_mask = self.forward_prediction_heads(output, mask_features, attn_mask_target_size=size_list[(i + 1) % self.num_feature_levels])
             predictions_mask.append(outputs_mask)
 
-        # assert len(predictions_class) == self.num_layers + 1
 
         if self.use_decoder:
             if self.dec_scale_factor > 1:
                 scale_factor = self.dec_scale_factor
                 mask_features = F.interpolate(mask_features, scale_factor=scale_factor, mode='bilinear', align_corners=False)
-            
-            # with torch.no_grad():
-            #     pos_encodings = self.pe_mask_features(mask_features)
-            #     pos_encodings = einops.rearrange(pos_encodings,"B C H W -> (H W) B C")
-
-            # B, C, H, W = mask_features.shape
-            # mask_features = einops.rearrange(mask_features,"B C H W -> (H W) B C")
-
-            # #output is QxNxC
-            # # if self.use_mlp_rev_attn:
-            # for i in range(self.dec_layers):
-            #     mask_features = self.decoder.cross_attention_layers[i](
-            #         mask_features, output,
-            #         memory_mask=None,
-            #         memory_key_padding_mask=None, 
-            #         pos=query_embed, query_pos=pos_encodings
-            #     )
-            #     mask_features = self.decoder.ffn_layers[i](mask_features)
-            
+           
             mask_features = self.decoder((mask_features, output, query_embed))
             mask_features = einops.rearrange(mask_features,"(H W) B C -> B C H W", H=H, W=W, B=B).contiguous()
             outputs_mask, attn_mask = self.forward_prediction_heads(output, mask_features, attn_mask_target_size=size_list[(i + 1) % self.num_feature_levels])

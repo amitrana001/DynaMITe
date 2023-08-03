@@ -4,67 +4,54 @@ import numpy as np
 import cv2
 from dynamite.data.points.annotation_generator import create_circular_mask
 import os
-def get_palette(num_cls):
-    palette = np.zeros(3 * num_cls, dtype=np.int32)
-
-    for j in range(0, num_cls):
-        lab = j
-        i = 0
-
-        while lab > 0:
-            palette[j*3 + 0] |= (((lab >> 0) & 1) << (7-i))
-            palette[j*3 + 1] |= (((lab >> 1) & 1) << (7-i))
-            palette[j*3 + 2] |= (((lab >> 2) & 1) << (7-i))
-            i = i + 1
-            lab >>= 3
-
-    return palette.reshape((-1, 3))
-color_map = get_palette(80)[1:]
 
 class Clicker:
 
-    def __init__(self, model, inputs, sampling_strategy =1, click_radius = 5):
+    def __init__(self, inputs, sampling_strategy =1, click_radius = 5):
         
-        self.model = model
+        # self.model = model
         self.inputs = inputs
         
         self.click_radius = click_radius
         #TO DO
         # self.normalize_time= normalize_time
-        self.batched_max_timestamp = None
+        self.max_timestamps = None
         
         # For sampling next click
         self.sampling_strategy = sampling_strategy
         self.not_clicked_map = None
-        self.fg_click_map = None
-        self.bg_click_map = None
-
-        self.device = None
+       
         self.click_counts = 0
+        self.click_sequence = None
 
-        self.processed_results = None
-        self.outputs = None
-        self.images=None
-
-        self.num_insts = None
-        self.features = None
-        self.mask_features = None
-
-        self.multi_scale_features=None
-        self.batched_num_clicks_per_object = None
-        self.batched_fg_coords_list = None
-        self.batched_bg_coords_list = None
-        self.fg_orig_list = []
-        self.bg_orig_list = []
+        self.num_insts = []
+        self.num_clicks_per_object = []
+        self.fg_coords = []
+        self.bg_coords = []
+        self.fg_orig_coords = []
+        self.bg_orig_coords = []
+        self.pred_masks = None
         self._set_gt_info()
         
-        self.batched_max_timestamp = [self.num_instances-1]
+        self.max_timestamps = [self.num_instances-1]
     
     def _set_gt_info(self):
 
         self.gt_masks = self.inputs[0]['instances'].gt_masks.to('cpu')
         self.num_instances, self.orig_h, self.orig_w = self.gt_masks.shape[:]
         self.click_counts += self.num_instances
+
+        self.click_sequence = list(range(self.click_counts))
+        # self.num_clicks_per_object = [[1]*self.num_instances]
+        # self.num_insts = [self.num_instances]
+
+        if 'num_clicks_per_object' in self.inputs[0]:
+            for x in self.inputs:
+                self.num_clicks_per_object.append(x['num_clicks_per_object'])
+                self.fg_coords.append(x['fg_click_coords'])
+                self.bg_coords.append(x['bg_click_coords'])
+                self.num_insts.append(len(x['num_clicks_per_object']))
+
         self.trans_h, self.trans_w = self.inputs[0]['image'].shape[-2:]
         
         self.ratio_h = self.trans_h/self.orig_h
@@ -83,37 +70,12 @@ class Clicker:
                     _pm = create_circular_mask(self.orig_h, self.orig_w, centers=[[coords[0], coords[1]]], radius=self.click_radius)
                     self.not_clicked_map[np.where(_pm)] = False
         
-        self.fg_orig_list = self.inputs[0]['orig_fg_click_coords']
+        self.fg_orig_coords = self.inputs[0]['orig_fg_click_coords']
         self.ignore_masks = None
         self.not_ignore_mask = None
         if 'ignore_mask' in self.inputs[0]:
             self.ignore_masks = self.inputs[0]['ignore_mask'].to(device='cpu', dtype = torch.uint8)
             self.not_ignore_mask = np.logical_not(np.asarray(self.ignore_masks, dtype=np.bool_))
-
-    
-    def predict(self):
-        if self.features is None:
-            (processed_results, outputs, self.images,
-            self.num_insts, self.features, self.mask_features,
-            self.multi_scale_features,
-            self.batched_num_clicks_per_object, self.batched_fg_coords_list,
-            self.batched_bg_coords_list) = self.model(self.inputs, max_timestamp=self.batched_max_timestamp)
-            # self.device = self.images.tensor.device
-        else:
-            (processed_results, outputs, self.images, 
-            self.num_insts, self.features, self.mask_features,
-            self.multi_scale_features,
-            self.batched_num_clicks_per_object, self.batched_fg_coords_list,
-            self.batched_bg_coords_list) = self.model(self.inputs, self.images, self.num_insts,
-                                                self.features, self.mask_features,
-                                                self.multi_scale_features,
-                                                self.batched_num_clicks_per_object,
-                                                self.batched_fg_coords_list, self.batched_bg_coords_list,
-                                                max_timestamp = self.batched_max_timestamp)
-        self.device = self.images.tensor.device
-        self.pred_masks = processed_results[0]['instances'].pred_masks.to('cpu',dtype=torch.uint8)
-       
-        return self.compute_iou()
 
     def get_next_click(self, refine_obj_index, time_step, padding=True):
 
@@ -168,22 +130,23 @@ class Clicker:
 
         trans_coords = [coords_y[0]*self.ratio_h, coords_x[0]*self.ratio_w]
         if obj_index == -1:
-            if self.batched_bg_coords_list[0]:
-                # self.bg_orig_list.extend([[coords_y[0],coords_x[0],time_step]])
-                self.batched_bg_coords_list[0].extend([[trans_coords[0],trans_coords[1],time_step]])
+            if self.bg_coords[0]:
+                # self.bg_orig_coords.extend([[coords_y[0],coords_x[0],time_step]])
+                self.bg_coords[0].extend([[trans_coords[0],trans_coords[1],time_step]])
             else:
-                # self.bg_orig_list[0] = [[coords_y[0], coords_x[0],time_step]]
-                self.batched_bg_coords_list[0] = [[trans_coords[0], trans_coords[1],time_step]]
-            self.bg_orig_list.append([coords_y[0],coords_x[0],time_step])
+                # self.bg_orig_coords[0] = [[coords_y[0], coords_x[0],time_step]]
+                self.bg_coords[0] = [[trans_coords[0], trans_coords[1],time_step]]
+            self.bg_orig_coords.append([coords_y[0],coords_x[0],time_step])
         else:
-            self.batched_num_clicks_per_object[0][obj_index] += 1
-            # self.fg_orig_list[0][obj_index].extend([[coords_y[0], coords_x[1],time_step]])
-            self.batched_fg_coords_list[0][obj_index].extend([[trans_coords[0], trans_coords[1],time_step]])
-            self.fg_orig_list[obj_index].append([coords_y[0], coords_x[0],time_step])
+            self.num_clicks_per_object[0][obj_index] += 1
+            # self.fg_orig_coords[0][obj_index].extend([[coords_y[0], coords_x[1],time_step]])
+            self.fg_coords[0][obj_index].extend([[trans_coords[0], trans_coords[1],time_step]])
+            self.fg_orig_coords[obj_index].append([coords_y[0], coords_x[0],time_step])
         # if self.normalize_time:
-        self.batched_max_timestamp[0]+=1          
+        self.max_timestamps[0]+=1          
 
         self.click_counts+=1
+        self.click_sequence.append(obj_index)
         return obj_index
     
     def get_next_click_max_dt(self, time_step, padding=True):
@@ -227,18 +190,19 @@ class Clicker:
         
         trans_coords = [coords_y[0]*self.ratio_h, coords_x[0]*self.ratio_w]
         if obj_index == -1:
-            if self.batched_bg_coords_list[0]:
-                self.batched_bg_coords_list[0].extend([[trans_coords[0],trans_coords[1],time_step]])
+            if self.bg_coords[0]:
+                self.bg_coords[0].extend([[trans_coords[0],trans_coords[1],time_step]])
             else:
-                self.batched_bg_coords_list[0] = [[trans_coords[0], trans_coords[1],time_step]]
+                self.bg_coords[0] = [[trans_coords[0], trans_coords[1],time_step]]
         else:
-            self.batched_num_clicks_per_object[0][obj_index] += 1
-            self.batched_fg_coords_list[0][obj_index].extend([[trans_coords[0], trans_coords[1],time_step]])
+            self.num_clicks_per_object[0][obj_index] += 1
+            self.fg_coords[0][obj_index].extend([[trans_coords[0], trans_coords[1],time_step]])
 
         # if self.normalize_time:
-        self.batched_max_timestamp[0]+=1   
+        self.max_timestamps[0]+=1   
         
         self.click_counts+=1
+        self.click_sequence.append(obj_index)
         return obj_index
 
     def compute_iou(self):
@@ -258,10 +222,7 @@ class Clicker:
                 ious.append(intersection/union)
             return ious
 
-    def save_visualization(self, save_results_path, ious=None, num_interactions=None, alpha_blend =0.6, click_radius=3):
-
-        # save_visualization(self.inputs[0], self.pred_masks, self.batched_fg_coords_list[0], self.batched_bg_coords_list[0],
-                                # save_results_path, sum(ious)/len(ious), num_interactions,  alpha_blend=0.6)
+    def save_visualization(self, save_results_path, ious=None, num_interactions=None, alpha_blend =0.6, click_radius=5):
 
         if num_interactions==0:
             result_masks_for_vis = self.gt_masks
@@ -276,36 +237,28 @@ class Clicker:
         pred_masks =np.asarray(result_masks_for_vis,dtype=np.uint8)
         c = []
         for i in range(pred_masks.shape[0]):
-            # c.append(color_map[2*(i)+2]/255.0)
             c.append(color_map[i]/255.0)
-        # pred_masks = np.asarray(pred_masks).astype(np.bool_)
-        # vis = visualizer.overlay_instances(masks = pred_masks, assigned_colors=c,alpha=alpha_blend)
-
-        # [Optional] prepare labels
-
-        # image = vis.get_image()
+       
         for i in range(pred_masks.shape[0]):
             image = self.apply_mask(image, pred_masks[i], c[i],alpha_blend)
-        # # Laminate your image!
-        # fig = overlay_masks(image, masks, labels=mask_labels, colors=cmap, mask_alpha=0.5)
+        
         total_colors = len(color_map)-1
         
         point_clicks_map = np.ones_like(image)*255
-        # if not show_only_masks:
-        if len(self.fg_orig_list) and num_interactions:
-            for j, fg_coords_per_mask in enumerate(self.fg_orig_list):
+
+        if len(self.fg_orig_coords) and num_interactions:
+            for j, fg_coords_per_mask in enumerate(self.fg_orig_coords):
                 for i, coords in enumerate(fg_coords_per_mask):
                     color = np.array(color_map[total_colors-5*j-4], dtype=np.uint8)
                     color = (int (color[0]), int (color[1]), int (color[2])) 
                     image = cv2.circle(image, (int(coords[1]), int(coords[0])), click_radius, tuple(color), -1)
         
-        if len(self.bg_orig_list):
-            for i, coords in enumerate(self.bg_orig_list):
+        if len(self.bg_orig_coords):
+            for i, coords in enumerate(self.bg_orig_coords):
                 color = np.array([255,0,0], dtype=np.uint8)
                 color = (int (color[0]), int (color[1]), int (color[2]))
                 image = cv2.circle(image, (int(coords[1]), int(coords[0])), click_radius, tuple(color), -1)
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-        # image = cv2.resize(image, (self.inputs[0]["width"],self.inputs[0]["height"]))
         save_dir = os.path.join(save_results_path, str(self.inputs[0]['image_id']))
         os.makedirs(save_dir, exist_ok=True)
         iou_val = np.round(sum(ious)/len(ious),4)*100
@@ -321,4 +274,7 @@ class Clicker:
         for i in range(self.num_instances):
             obj_areas[i] = self.gt_masks[i].sum()/(self.orig_h * self.orig_w)
         return obj_areas
+    
+    def set_pred_masks(self,pred_masks):
+        self.pred_masks = pred_masks
   

@@ -16,7 +16,7 @@ from detectron2.structures.masks import PolygonMasks
 
 from dynamite.data.dataset_mappers.utils.datamapper_utils import convert_coco_poly_to_mask,  build_transform_gen
 
-from dynamite.inference.eval_utils import get_gt_clicks_coords_eval_orig
+from dynamite.inference.utils.eval_utils import get_gt_clicks_coords_eval_orig
 
 __all__ = ["EvaluationDatasetMapper"]
 
@@ -44,7 +44,7 @@ class EvaluationDatasetMapper:
         *,
         tfm_gens,
         image_format,
-        unique_timestamp,
+        # unique_timestamp,
     ):
         """
         NOTE: this interface is experimental.
@@ -62,7 +62,7 @@ class EvaluationDatasetMapper:
         self.img_format = image_format
         self.is_train = is_train
         self.min_area = 500.0
-        self.unique_timestamp = unique_timestamp
+        # self.unique_timestamp = unique_timestamp
         self.dataset_name = dataset_name
     
     @classmethod
@@ -75,7 +75,7 @@ class EvaluationDatasetMapper:
             "dataset_name": dataset_name,
             "tfm_gens": tfm_gens,
             "image_format": cfg.INPUT.FORMAT,
-            "unique_timestamp": cfg.ITERATIVE.TRAIN.UNIQUE_TIMESTAMP
+            # "unique_timestamp": cfg.ITERATIVE.TRAIN.UNIQUE_TIMESTAMP
         }
         return ret
 
@@ -173,20 +173,18 @@ class EvaluationDatasetMapper:
                 if 'ignore_mask' in dataset_dict:
                     ignore_masks = dataset_dict['ignore_mask'].to(device='cpu', dtype = torch.uint8)
                     
-                (num_clicks_per_object, fg_coords_list, bg_coords_list,
-                fg_point_masks, bg_point_masks, orig_fg_coords_list) = get_gt_clicks_coords_eval_orig(new_gt_masks, image_shape, ignore_masks=ignore_masks, unique_timestamp=self.unique_timestamp)
+                (num_clicks_per_object, fg_coords_list, orig_fg_coords_list) = get_gt_clicks_coords_eval_orig(new_gt_masks, image_shape, ignore_masks=ignore_masks)
         
-                dataset_dict["fg_scrbs"] = fg_point_masks
-                dataset_dict["bg_scrbs"] = bg_point_masks
+    
                 # dataset_dict["bg_mask"] = torch.logical_not(all_masks).to(dtype = torch.uint8)
                 dataset_dict["orig_fg_click_coords"] = orig_fg_coords_list
                 dataset_dict["fg_click_coords"] = fg_coords_list
-                dataset_dict["bg_click_coords"] = bg_coords_list
+                dataset_dict["bg_click_coords"] = None
                 dataset_dict["num_clicks_per_object"] = num_clicks_per_object
                 # print(masks.tensor.dtype)
                 # visualization(dataset_dict["image"], new_instances, prev_output=None, batched_fg_coords_list=[fg_coords_list],batched_bg_coords_list=[bg_coords_list])
                 assert len(num_clicks_per_object) == gt_masks.shape[0]
-                assert len(fg_point_masks) == len(num_clicks_per_object) 
+                # assert len(fg_point_masks) == len(num_clicks_per_object) 
             else:
                 return None
 
