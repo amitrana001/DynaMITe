@@ -31,7 +31,7 @@ def get_palette(num_cls):
     return palette.reshape((-1, 3))
 color_map = get_palette(80)[1:]
 
-def get_gt_clicks_coords_eval_orig(masks, image_shape, max_num_points=1, ignore_masks=None,
+def get_gt_clicks_coords_eval(masks, image_shape, max_num_points=1, ignore_masks=None,
                                    first_click_center=True, t= 0):
 
     """
@@ -97,10 +97,7 @@ def log_single_instance(res, max_interactions, dataset_name, model_name, ablatio
     assert total_num_instances == len(dataset_iou_list)
     
     if save_summary_stats:
-        if ablation:
-            save_summary_path = os.path.join(f"./output/evaluation/ablation/summary/{dataset_name}")
-        else:
-            save_summary_path = os.path.join(f"./output/evaluation/final/summary/{dataset_name}")
+        save_summary_path = os.path.join(f"./output/evaluation/final/summary/{dataset_name}")
         os.makedirs(save_summary_path, exist_ok=True)
         stats_file = os.path.join(save_summary_path,
                                     f"{model_name}_{max_interactions}.pickle")
@@ -148,7 +145,7 @@ def log_single_instance(res, max_interactions, dataset_name, model_name, ablatio
 
 
 def log_multi_instance(res, max_interactions, dataset_name, model_name, ablation=False,iou_threshold=0.85,
-                        save_stats_summary=True, per_obj = False, sampling_strategy = 0):
+                        save_stats_summary=True, sampling_strategy = 1):
     logger = logging.getLogger(__name__)
     total_num_instances = sum(res['total_num_instances'])
     total_num_interactions = sum(res['total_num_interactions'])
@@ -177,9 +174,9 @@ def log_multi_instance(res, max_interactions, dataset_name, model_name, ablation
         for _d in res['ious_objects_per_interaction']:
             ious_objects_per_interaction.update(_d)
         
-        clicked_objects_per_interaction = {}
-        for _d in res['clicked_objects_per_interaction']:
-            clicked_objects_per_interaction.update(_d)
+        click_sequence_per_image = {}
+        for _d in res['click_sequence_per_image']:
+            click_sequence_per_image.update(_d)
         
         object_areas_per_image = {}
         for _d in res['object_areas_per_image']:
@@ -193,7 +190,7 @@ def log_multi_instance(res, max_interactions, dataset_name, model_name, ablation
         for _d in res['object_areas_per_image']:
             bg_click_coords_per_image.update(_d)
        
-        summary_stats["clicked_objects_per_interaction"] = clicked_objects_per_interaction
+        summary_stats["click_sequence_per_image"] = click_sequence_per_image
         summary_stats["ious_objects_per_interaction"] = ious_objects_per_interaction
         summary_stats['object_areas_per_image'] =  object_areas_per_image
         summary_stats['fg_click_coords_per_image'] =  fg_click_coords_per_image

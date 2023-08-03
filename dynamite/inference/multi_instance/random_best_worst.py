@@ -20,12 +20,10 @@ from torch import nn
 # from ..clicker import Clicker
 from ..utils.clicker import Clicker
 from ..utils.predictor import Predictor
-color_map = colormap(rgb=True, maximum=1)
-
 
 def evaluate(
-    model, data_loader, cfg, dataset_name=None, save_stats_summary = True, 
-    iou_threshold = 0.85, max_interactions = 10, sampling_strategy=0,
+    model, data_loader, dataset_name=None, save_stats_summary = False, 
+    iou_threshold = 0.85, max_interactions = 10, sampling_strategy=1,
     eval_strategy = "worst", seed_id = 0, vis_path = None
 ):
     """
@@ -152,8 +150,7 @@ def evaluate(
                         break
                 if point_sampled:
                     num_interactions+=1
-                    
-                    start_transformer_decoder_time = time.perf_counter()           
+          
                     pred_masks = predictor.get_prediction(clicker)
                     clicker.set_pred_masks(pred_masks)
                     ious = clicker.compute_iou()

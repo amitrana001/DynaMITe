@@ -16,7 +16,7 @@ from detectron2.structures.masks import PolygonMasks
 
 from dynamite.data.dataset_mappers.utils.datamapper_utils import convert_coco_poly_to_mask,  build_transform_gen
 
-from dynamite.inference.utils.eval_utils import get_gt_clicks_coords_eval_orig
+from dynamite.inference.utils.eval_utils import get_gt_clicks_coords_eval
 
 __all__ = ["EvaluationDatasetMapper"]
 
@@ -173,7 +173,7 @@ class EvaluationDatasetMapper:
                 if 'ignore_mask' in dataset_dict:
                     ignore_masks = dataset_dict['ignore_mask'].to(device='cpu', dtype = torch.uint8)
                     
-                (num_clicks_per_object, fg_coords_list, orig_fg_coords_list) = get_gt_clicks_coords_eval_orig(new_gt_masks, image_shape, ignore_masks=ignore_masks)
+                (num_clicks_per_object, fg_coords_list, orig_fg_coords_list) = get_gt_clicks_coords_eval(new_gt_masks, image_shape, ignore_masks=ignore_masks)
         
     
                 # dataset_dict["bg_mask"] = torch.logical_not(all_masks).to(dtype = torch.uint8)

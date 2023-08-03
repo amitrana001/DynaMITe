@@ -16,16 +16,13 @@ from detectron2.utils.colormap import colormap
 from detectron2.utils.comm import get_world_size
 from detectron2.utils.logger import log_every_n_seconds
 from torch import nn
-from .clicker import Clicker
-from dynamite.inference.eval_utils import prepare_scribbles, get_next_coords_bg_eval, get_next_coords_fg_eval, save_visualization
-from dynamite.utils.train_utils import compute_fn_iou
-color_map = colormap(rgb=True, maximum=1)
-
+from ..utils.clicker import Clicker
+from ..utils.predictor import Predictor
 
 def evaluate(
-    model, data_loader, cfg, dataset_name=None, save_stats_summary =True, 
-    iou_threshold = 0.85, max_interactions = 10, sampling_strategy=0,
-    eval_strategy = "worst", seed_id = 0, normalize_time = True
+    model, data_loader, dataset_name=None, save_stats_summary = False, 
+    iou_threshold = 0.85, max_interactions = 10, sampling_strategy=1,
+    eval_strategy = "worst", seed_id = 0, vis_path = None
 ):
     """
     Run model on the data_loader and evaluate the metrics with evaluator.
@@ -61,36 +58,30 @@ def evaluate(
     total_compute_time = 0
     total_eval_time = 0
 
-    save_results_path = os.path.join("./output/evaluations/", dataset_name)
-    # save_results_path += cfg.DATASETS.TEST[0]
+    if vis_path:
+        save_results_path = os.path.join(vis_path, dataset_name)
 
     with ExitStack() as stack:
         if isinstance(model, nn.Module):
             stack.enter_context(inference_context(model))
         stack.enter_context(torch.no_grad())
 
-        use_prev_logits = False
         # variables to get evaluation summary statistics
         total_num_instances = 0
         total_num_interactions = 0
         
-        time_per_image_features = []
-        time_per_intreaction_tranformer_decoder = []
-        time_per_image_annotation = []
-
-        clicked_objects_per_interaction = defaultdict(list)
         ious_objects_per_interaction = defaultdict(list)
-        object_areas_per_image = {}
-        fg_click_coords_per_image = {}
-        bg_click_coords_per_image = {}
-        # num_instances_per_image = {}
         
-        # if eval_strategy == "random":
+        if save_stats_summary:
+            object_areas_per_image = {}
+            fg_click_coords_per_image = {}
+            bg_click_coords_per_image = {}
+            click_sequence_per_image = {}
+
         random.seed(123456+seed_id)
         start_data_time = time.perf_counter()
         for idx, inputs in enumerate(data_loader):
-            # if 'bg_mask' not in inputs[0]:
-            #     continue
+           
             total_data_time += time.perf_counter() - start_data_time
             if idx == num_warmup:
                 start_time = time.perf_counter()
@@ -100,11 +91,13 @@ def evaluate(
 
             start_compute_time = time.perf_counter()
             
-            predictor = Clicker(model, inputs, sampling_strategy, normalize_time=normalize_time)
+            clicker = Clicker(inputs, sampling_strategy)
+            predictor = Predictor(model)
+
+            if vis_path:
+                clicker.save_visualization(save_results_path, ious=0, num_interactions=0)
             num_instances = predictor.num_instances
             total_num_instances+=num_instances
-
-            object_areas_per_image[f"{inputs[0]['image_id']}_{idx}"] = predictor.get_obj_areas()
 
             # we start with atleast one interaction per instance
             total_num_interactions+=(num_instances)
@@ -114,48 +107,52 @@ def evaluate(
             num_clicks_per_object[-1] = 0
 
             max_iters_for_image = max_interactions * num_instances
-
-            start_features_time = time.perf_counter()
         
-            ious = predictor.predict()
+            pred_masks = predictor.get_prediction(clicker)
+            clicker.set_pred_masks(pred_masks)
+            ious = clicker.compute_iou()
 
-            time_per_image_features.append(time.perf_counter() - start_features_time)
-            time_per_image = time.perf_counter() - start_features_time
-           
-            point_sampled = True
+            if vis_path:
+                clicker.save_visualization(save_results_path, ious=ious, num_interactions=num_interactions)
 
-            clicked_objects_per_interaction[f"{inputs[0]['image_id']}_{idx}"].append([True]*(num_instances+1))
+            # point_sampled = True
+
             ious_objects_per_interaction[f"{inputs[0]['image_id']}_{idx}"].append(ious)
-            while (num_interactions<max_iters_for_image and point_sampled):
+            while (num_interactions<max_iters_for_image):
                 if all(iou >= iou_threshold for iou in ious):
                     break
 
                 index_clicked = [False]*(num_instances+1)
 
-                point_sampled = False
-                obj_index = predictor.get_next_click_max_dt(time_step=num_interactions)
+                # point_sampled = False
+                obj_index = clicker.get_next_click_max_dt(time_step=num_interactions)
                 total_num_interactions+=1
                 
                 index_clicked[obj_index] = True
                 num_clicks_per_object[obj_index]+=1
-                point_sampled = True
-                if point_sampled:
-                    num_interactions+=1
-                    clicked_objects_per_interaction[f"{inputs[0]['image_id']}_{idx}"].append(index_clicked)
-
-                    start_transformer_decoder_time = time.perf_counter()           
-                    ious = predictor.predict()
-                    time_per_intreaction_tranformer_decoder.append(time.perf_counter() - start_transformer_decoder_time)
-                    time_per_image+=time.perf_counter() - start_transformer_decoder_time
-            
-                    ious_objects_per_interaction[f"{inputs[0]['image_id']}_{idx}"].append(ious)
+                # point_sampled = True
+                # if point_sampled:
+                num_interactions+=1
+                            
+                pred_masks = predictor.get_prediction(clicker)
+                clicker.set_pred_masks(pred_masks)
+                ious = clicker.compute_iou()
+                
+                if vis_path:
+                    clicker.save_visualization(save_results_path, ious=ious, num_interactions=num_interactions)
+                
+                ious_objects_per_interaction[f"{inputs[0]['image_id']}_{idx}"].append(ious)
                 
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
-            time_per_image_annotation.append(time_per_image)
-            fg_click_coords_per_image[f"{inputs[0]['image_id']}_{idx}"] = predictor.batched_fg_coords_list[0]
-            bg_click_coords_per_image[f"{inputs[0]['image_id']}_{idx}"] = predictor.batched_bg_coords_list[0]
 
+            if save_stats_summary:
+                object_areas_per_image[f"{inputs[0]['image_id']}_{idx}"] = clicker.get_obj_areas()
+                click_sequence_per_image[f"{inputs[0]['image_id']}_{idx}"] = clicker.click_sequence
+                fg_click_coords_per_image[f"{inputs[0]['image_id']}_{idx}"] = clicker.fg_orig_coords
+                bg_click_coords_per_image[f"{inputs[0]['image_id']}_{idx}"] = clicker.bg_orig_coords
+           
+           
             total_compute_time += time.perf_counter() - start_compute_time
 
             iters_after_start = idx + 1 - num_warmup * int(idx >= num_warmup)
@@ -200,18 +197,17 @@ def evaluate(
     )
 
     results = {'total_num_instances': [total_num_instances],
-               'total_num_interactions': [total_num_interactions],
-               'total_compute_time_str': total_compute_time_str,
-               'iou_threshold': iou_threshold,
-               'time_per_intreaction_tranformer_decoder': time_per_intreaction_tranformer_decoder,
-               'time_per_image_features': time_per_image_features,
-               'time_per_image_annotation': time_per_image_annotation,
-               'clicked_objects_per_interaction': [clicked_objects_per_interaction],
-               'ious_objects_per_interaction': [ious_objects_per_interaction],
-               'object_areas_per_image': [object_areas_per_image],
-               'fg_click_coords_per_image': [fg_click_coords_per_image],
-               'bg_click_coords_per_image': [bg_click_coords_per_image],
-               }
+                'total_num_interactions': [total_num_interactions],
+                'total_compute_time_str': total_compute_time_str,
+                'iou_threshold': iou_threshold,
+                'ious_objects_per_interaction': [ious_objects_per_interaction],
+    }
+    if save_stats_summary:
+        results['click_sequence_per_image'] = [click_sequence_per_image],
+        results['object_areas_per_image'] = [object_areas_per_image],
+        results['fg_click_coords_per_image'] = [fg_click_coords_per_image],
+        results['bg_click_coords_per_image'] = [bg_click_coords_per_image],
+        
     return results
 
 

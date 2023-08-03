@@ -147,6 +147,7 @@ def default_argument_parser(epilog=None):
         "See documentation of `DefaultTrainer.resume_or_load()` for what it means.",
     )
     parser.add_argument("--eval-only", action="store_true", help="perform evaluation only")
+    parser.add_argument("--save-summary", action="store_true", help="save statistics summary for evaluation")
     parser.add_argument("--eval-datasets", type=tuple_type, default="GrabCut", help="perform evaluation on given datsets")
     parser.add_argument("--eval-strategy", type=str, default="random", help="evaluation strategy")
     parser.add_argument("--seed-id", type=int, default=0, help="seed id for random evaluation")

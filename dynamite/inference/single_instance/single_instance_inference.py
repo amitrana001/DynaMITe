@@ -17,8 +17,8 @@ from ..utils.predictor import Predictor
 color_map = colormap(rgb=True, maximum=1)
 
 def get_avg_noc(
-    model, data_loader, cfg, iou_threshold = 0.85, dataset_name= None,
-    max_interactions = 20, is_post_process = False, sampling_strategy=1,
+    model, data_loader, cfg, iou_threshold = 0.90, dataset_name= None,
+    max_interactions = 20, sampling_strategy=1,save_stats_summary=False, vis_path = None
 ):
     """
     Run model on the data_loader and evaluate the metrics with evaluator.

@@ -180,9 +180,15 @@ class Trainer(DefaultTrainer):
         if not cfg.SOLVER.CLIP_GRADIENTS.CLIP_TYPE == "full_model":
             optimizer = maybe_add_gradient_clipping(cfg, optimizer)
         return optimizer
+    
+    @classmethod
+    def test(cls, cfg, model, evaluators=None):
+        
+        cls.interactive_evaluation(cfg,model)
+        return {}
 
     @classmethod
-    def interactive_evaluation(cls, cfg, args, model):
+    def interactive_evaluation(cls, cfg, model, args=None):
         """
         Evaluate the given model. The given model is expected to already contain
         weights to evaluate.
@@ -199,15 +205,21 @@ class Trainer(DefaultTrainer):
         """
         logger = logging.getLogger(__name__)
        
-        if args.eval_only:
+        if args and args.eval_only:
             eval_datasets = args.eval_datasets
             vis_path = args.vis_path
+            save_stats_summary = args.save_summary
             eval_strategy = args.eval_strategy
             seed_id = args.seed_id
+            iou_threshold = args.iou_threshold
+            max_interactions = args.max_interactions
         else:
             eval_datasets = cfg.DATASETS.TEST
             vis_path = None
-            eval_strategy = "random"
+            save_stats_summary = False
+            eval_strategy = cfg.ITERATIVE.TEST.EVAL_STRATEGY
+            iou_threshold = args.ITERATIVE.TEST.IOU_THRESHOLD
+            max_interactions = args.ITERATIVE.TEST.MAX_NUM_INTERACTIONS
             seed_id = 0
         
         for dataset_name in eval_datasets:
@@ -216,31 +228,22 @@ class Trainer(DefaultTrainer):
                 from dynamite.inference.single_instance.single_instance_inference import get_avg_noc
                 data_loader = cls.build_test_loader(cfg, dataset_name)
                 
-                evaluator =None
-            
-                max_interactions = 20
-                iou_threshold = [0.90]
-                
-                for iou in iou_threshold:
-                    for s in range(0,2):
-                
-                        # model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + cfg.MODEL.WEIGHTS.split("/")[-1][5:-4] + f"_S{s}"
-                        # model_name += "_V1"
-                        model_name = cfg.MODEL.WEIGHTS
-                        results_i = get_avg_noc(model, data_loader, cfg, iou_threshold = iou,
-                                                dataset_name=dataset_name,sampling_strategy=s,
-                                                max_interactions=max_interactions)
-                        results_i = comm.gather(results_i, dst=0)  # [res1:dict, res2:dict,...]
-                        if comm.is_main_process():
-                            # sum the values with same keys
-                            assert len(results_i)>0
-                            res_gathered = results_i[0]
-                            results_i.pop(0)
-                            for _d in results_i:
-                                for k in _d.keys():
-                                    res_gathered[k] += _d[k]
-                            log_single_instance(res_gathered, max_interactions=max_interactions,
-                                                dataset_name=dataset_name, model_name=model_name,save_summary_stats=False)
+                model_name = cfg.MODEL.WEIGHTS
+                results_i = get_avg_noc(model, data_loader, cfg, iou_threshold = iou_threshold,
+                                        dataset_name=dataset_name,sampling_strategy=1,
+                                        max_interactions=max_interactions,vis_path=vis_path,
+                                        save_stats_summary=save_stats_summary)
+                results_i = comm.gather(results_i, dst=0)  # [res1:dict, res2:dict,...]
+                if comm.is_main_process():
+                    # sum the values with same keys
+                    assert len(results_i)>0
+                    res_gathered = results_i[0]
+                    results_i.pop(0)
+                    for _d in results_i:
+                        for k in _d.keys():
+                            res_gathered[k] += _d[k]
+                    log_single_instance(res_gathered, max_interactions=max_interactions, 
+                                        dataset_name=dataset_name, model_name=model_name,save_stats_summary=save_stats_summary)
             elif dataset_name in ["davis_2017_val","sbd_multi_insts","coco_2017_val"]:
                 
                 if eval_strategy in ["random", "best", "worst"]:
@@ -255,9 +258,9 @@ class Trainer(DefaultTrainer):
                 data_loader = cls.build_test_loader(cfg, dataset_name)
                 
                 model_name = cfg.MODEL.WEIGHTS
-                results_i = evaluate(model, data_loader,cfg, dataset_name, sampling_strategy=1,
-                                    iou_threshold = 0.85, max_interactions = 10,
-                                    eval_strategy = eval_strategy,seed_id=seed_id)
+                results_i = evaluate(model, data_loader, dataset_name, sampling_strategy=1, 
+                                    iou_threshold = 0.85, max_interactions = 10, save_stats_summary=save_stats_summary,
+                                    eval_strategy = eval_strategy,seed_id=seed_id, vis_path=vis_path)
                 results_i = comm.gather(results_i, dst=0)  # [res1:dict, res2:dict,...]
                 if comm.is_main_process():
                     # sum the values with same keys
@@ -286,7 +289,7 @@ def setup(args):
     cfg.freeze()
     default_setup(cfg, args)
     # Setup logger for "mask_former" module
-    setup_logger(output=cfg.OUTPUT_DIR, distributed_rank=comm.get_rank(), name="mask2former")
+    setup_logger(output=cfg.OUTPUT_DIR, distributed_rank=comm.get_rank(), name="dynamite")
     return cfg
 
 
