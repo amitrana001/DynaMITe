@@ -8,4 +8,4 @@ from .pixel_decoder.msdeformattn import MSDeformAttnPixelDecoder
 from .pixel_decoder.segformer_head import SegFormerPixelDecoder
 
 from .meta_arch.dynamite_head import DynamiteHead
-from .interactive_transformer.dynamite_interactive_transformer_decoder import InteractiveTransformerDecoder
+# from .interactive_transformer.dynamite_interactive_transformer_decoder import InteractiveTransformerDecoder

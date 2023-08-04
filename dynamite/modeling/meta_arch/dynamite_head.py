@@ -15,7 +15,7 @@ from detectron2.modeling import SEM_SEG_HEADS_REGISTRY
 from detectron2.utils.memory import retry_if_cuda_oom
 from detectron2.structures import Boxes, ImageList, Instances, BitMasks
 
-from ..interactive_transformer import build_transformer_decoder
+# from ..interactive_transformer import build_transformer_decoder
 from ..pixel_decoder.fpn import build_pixel_decoder
 from ..interactive_transformer.utils import build_interactive_transformer
 

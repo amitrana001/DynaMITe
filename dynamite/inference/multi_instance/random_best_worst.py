@@ -27,10 +27,12 @@ def evaluate(
     eval_strategy = "worst", seed_id = 0, vis_path = None
 ):
     """
-    Run model on the data_loader and evaluate the metrics with evaluator.
-    Also benchmark the inference speed of `model.__call__` accurately.
+    Run model on the data_loader and return a dict later used to calculate
+    all the metrics for multi-instance inteactive segmentation such as NCI,
+    NFO, NFI, and Avg IoU.
     The model will be used in eval mode.
-    Args:
+
+    Arguments:
         model (callable): a callable which takes an object from
             `data_loader` and returns some outputs.
             If it's an nn.Module, it will be temporarily set to `eval` mode.
@@ -38,14 +40,46 @@ def evaluate(
             wrap the given model and override its behavior of `.eval()` and `.train()`.
         data_loader: an iterable object with a length.
             The elements it generates will be the inputs to the model.
-        evaluator: the evaluator(s) to run. Use `None` if you only want to benchmark,
-            but don't want to do any evaluation.
+        dataset_name: str
+            Name of the dataset (used for logging purpose)
+        save_stats_summary: bool
+            TO gather all the statistics such as
+            - foreground and background clicks list
+            - click sequence
+        iou_threshold: float
+            Desired IoU value for each object mask
         max_interactions: int
             Maxinum number of interactions per object
-        iou_threshold: float
-            IOU threshold bwteen gt_mask and pred_mask to stop interaction
+        sampling_strategy: int
+            Strategy to avaoid regions while sampling next clicks
+            0: new click sampling avoids all the previously sampled click locations
+            1: new click sampling avoids all locations upto radius 5 around all
+               the previously sampled click locations
+        eval_strategy: str
+            Click sampling strategy during refinement
+        seed_id: int
+            To fix seed during evaluation
+        vis_path: str
+            Path to save visualization of masks with clicks during evaluation
+
     Returns:
-        The return value of `evaluator.evaluate()`
+        Dict with following keys:
+            'total_num_instances': total number of instances in the dataset
+            'total_num_interactions': total number of interactions/clicks sampled 
+            'total_compute_time_str': total compute time for evaluating the dataset
+            'iou_threshold': iou_threshold
+            'ious_objects_per_interaction': a dict with keys as image ids and values as
+            list of ious of all objects aster each interaction/refinement
+                        
+        Additional keys if save_stats_summary = True:
+            'click_sequence_per_image': a dict with keys as image ids and values as
+            list of object ids clicked in sequence during refinement
+            'object_areas_per_image': a dict with keys as image ids and values as 
+            list of ratios of object mask with the image area
+            'fg_click_coords_per_image': a dict with keys as image ids and values as 
+            list of list of click coords for each object
+            'bg_click_coords_per_image': a dict with keys as image ids and values as 
+            list of click coords for background
     """
     
     num_devices = get_world_size()

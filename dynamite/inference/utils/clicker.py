@@ -4,6 +4,7 @@ import numpy as np
 import cv2
 from dynamite.data.points.annotation_generator import create_circular_mask
 import os
+from dynamite.utils.vis import color_map
 
 class Clicker:
 
@@ -194,6 +195,7 @@ class Clicker:
                 self.bg_coords[0].extend([[trans_coords[0],trans_coords[1],time_step]])
             else:
                 self.bg_coords[0] = [[trans_coords[0], trans_coords[1],time_step]]
+            self.bg_orig_coords.append([coords_y[0],coords_x[0],time_step])
         else:
             self.num_clicks_per_object[0][obj_index] += 1
             self.fg_coords[0][obj_index].extend([[trans_coords[0], trans_coords[1],time_step]])
@@ -221,6 +223,29 @@ class Clicker:
                 union = torch.logical_and(torch.logical_or(pred_mask, gt_mask), ignore_gt_mask_inv).sum()
                 ious.append(intersection/union)
             return ious
+    
+    def compute_iou_sam(self):
+
+        ious = []
+        import itertools
+        self.pred_masks = torch.from_numpy(self.pred_masks)
+        if self.ignore_masks is None:
+            for gt_mask, pred_mask in zip(itertools.cycle(self.gt_masks), self.pred_masks):
+                intersection = (gt_mask * pred_mask).sum()
+                union = torch.logical_or(gt_mask, pred_mask).to(torch.int).sum()
+                ious.append(intersection/union)
+            index = ious.index(max(ious))
+            self.pred_masks = self.pred_masks[index][None,:,:]
+            return [ious[index]]
+        else:
+            for gt_mask, pred_mask in zip(itertools.cycle(self.gt_masks), self.pred_masks):
+                ignore_gt_mask_inv = ~(self.ignore_masks[0].to(dtype=torch.bool))
+                intersection = torch.logical_and(torch.logical_and(pred_mask, gt_mask), ignore_gt_mask_inv).sum()
+                union = torch.logical_and(torch.logical_or(pred_mask, gt_mask), ignore_gt_mask_inv).sum()
+                ious.append(intersection/union)
+            index = ious.index(max(ious))
+            self.pred_masks = self.pred_masks[index][None,:,:]
+            return [ious[index]]
 
     def save_visualization(self, save_results_path, ious=None, num_interactions=None, alpha_blend =0.6, click_radius=5):
 
