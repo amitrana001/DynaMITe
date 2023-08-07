@@ -9,7 +9,7 @@ import argparse
 
 import torch
 
-def get_statistics(summary_stats, ablation = False, save_stats_path=None):
+def get_statistics(summary_stats, save_stats_path=None):
     # with open(pickle_path, 'rb') as handle:
     #     summary_stats= pickle.load(handle)
     
@@ -65,16 +65,12 @@ def get_statistics(summary_stats, ablation = False, save_stats_path=None):
     table.add_row([dataset_name, NCI_all, NCI_suc, NFI, NFO, Avg_IOU, total_num_instances])
 
     print(table)
-    # save_stats_path = os.path.join("./output/evaluation", f'{dataset_name}.txt')
-    if ablation:
-        save_stats_path = os.path.join("./output/evaluation/ablation/summary",  f'{dataset_name}.txt')
-        os.makedirs("./output/evaluation/ablation/summary", exist_ok=True)
+    
+    if save_stats_path is not None:
+        save_stats_path = os.path.join(save_stats_path, f'{dataset_name}.txt')
     else:
-        if save_stats_path is not None:
-            save_stats_path = os.path.join(save_stats_path, f'{dataset_name}.txt')
-        else:
-            save_stats_path = os.path.join("./output/evaluation/final/summary", f'{dataset_name}.txt')
-            os.makedirs("./output/evaluation/final/summary", exist_ok=True)
+        save_stats_path = os.path.join("./output/iccv/eval", f'{dataset_name}.txt')
+        os.makedirs("./output/iccv/eval", exist_ok=True)
     if not os.path.exists(save_stats_path):
         # print("No File")
         header = ['model', "NCI_all", "NCI_suc", "NFI", "NFO", "Avg_IOU", 'IOU_thres',"max_num_iters", "num_inst"]

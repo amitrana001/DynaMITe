@@ -206,7 +206,7 @@ class Trainer(DefaultTrainer):
             )
 
         results = OrderedDict()
-        from dynamite.inference.single_instance.sam_inference import get_avg_noc
+        from dynamite.inference.single_instance.single_instance_inference import get_avg_noc
         for dataset_name in ["GrabCut", "Berkeley", "davis_single_inst", "coco_Mval", 'sbd_single_inst']:
         # for dataset_name in ["coco_Mval"]:
             data_loader = cls.build_test_loader(cfg, dataset_name)
@@ -217,11 +217,11 @@ class Trainer(DefaultTrainer):
             iou_threshold = [0.90]
             
             for iou in iou_threshold:
-                for s in range(1,2):
+                for s in range(0,2):
             
                     # model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + cfg.MODEL.WEIGHTS.split("/")[-1][5:-4] + f"_S{s}"
-                    # model_name += "_V1"
-                    model_name = "SAM_vit_h"
+                    model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + cfg.MODEL.WEIGHTS.split("/")[-1][5:-4] + f"_S{s}"
+
                     results_i = get_avg_noc(model, data_loader, cfg, iou_threshold = iou,
                                             dataset_name=dataset_name,sampling_strategy=s,
                                             max_interactions=max_interactions)
@@ -235,7 +235,8 @@ class Trainer(DefaultTrainer):
                             for k in _d.keys():
                                 res_gathered[k] += _d[k]
                         log_single_instance(res_gathered, max_interactions=max_interactions,
-                                            dataset_name=dataset_name, model_name=model_name,save_summary_stats=False)
+                                            dataset_name=dataset_name, model_name=model_name,
+                                            save_summary_stats=False)
 
         return {}
 

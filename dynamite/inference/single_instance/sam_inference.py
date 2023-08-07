@@ -91,7 +91,8 @@ def get_avg_noc(
 
             pred_masks = predictor.get_prediction(clicker)
             clicker.set_pred_masks(pred_masks)
-            ious = clicker.compute_iou_sam()
+            # ious = clicker.compute_iou_sam()
+            ious = clicker.compute_iou()
            
             per_image_iou_list.append(ious[0])
             while (num_interactions<max_interactions):
@@ -107,7 +108,9 @@ def get_avg_noc(
 
                 pred_masks = predictor.get_prediction(clicker)
                 clicker.set_pred_masks(pred_masks)
-                ious = clicker.compute_iou_sam()
+                # ious = clicker.compute_iou_sam()
+                ious = clicker.compute_iou()
+
                
                 per_image_iou_list.append(ious[0])
                

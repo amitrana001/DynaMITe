@@ -33,11 +33,10 @@ from detectron2.config import get_cfg
 from detectron2.data import build_detection_train_loader, build_detection_test_loader
 from detectron2.engine import (
     DefaultTrainer,
-    default_argument_parser,
+    # default_argument_parser,
     default_setup,
     launch,
 )
-from dynamite.evaluation.single_instance_evaluation import get_avg_noc
 
 from detectron2.projects.deeplab import add_deeplab_config, build_lr_scheduler
 from detectron2.solver.build import maybe_add_gradient_clipping
@@ -58,7 +57,8 @@ from dynamite import (
     add_hrnet_config
 )
 
-from dynamite.evaluation.eval_utils import log_single_instance, log_multi_instance
+from dynamite.inference.utils.eval_utils import log_multi_instance
+from dynamite.utils.misc import default_argument_parser
 
 class Trainer(DefaultTrainer):
     """
@@ -180,6 +180,12 @@ class Trainer(DefaultTrainer):
 
     @classmethod
     def test(cls, cfg, model, evaluators=None):
+        
+        cls.interactive_evaluation(cfg,model)
+        return {}
+
+    @classmethod
+    def interactive_evaluation(cls, cfg, model, args=None):
         """
         Evaluate the given model. The given model is expected to already contain
         weights to evaluate.
@@ -195,44 +201,32 @@ class Trainer(DefaultTrainer):
             dict: a dict of result metrics
         """
         logger = logging.getLogger(__name__)
-        if isinstance(evaluators, DatasetEvaluator):
-            evaluators = [evaluators]
-        if evaluators is not None:
-            assert len(cfg.DATASETS.TEST) == len(evaluators), "{} != {}".format(
-                len(cfg.DATASETS.TEST), len(evaluators)
-            )
+    
+        if args and args.eval_only:
+            eval_strategy = args.eval_strategy
+            seed_id = args.seed_id
 
-        results = OrderedDict()
-        max_interactions =10
-        # dataset_name = "davis_2017_val"
-        seed_id = cfg.EVALUATION_STRATEGY.SEED_ID
-        normalize_time = cfg.EVALUATION_STRATEGY.NORMALIZE_TIME 
-        eval_strategy = cfg.EVALUATION_STRATEGY.TYPE
         if eval_strategy in ["random", "best", "worst"]:
-            from dynamite.inference.random_best_worst import evaluate
+            from dynamite.inference.multi_instance.random_best_worst import evaluate
         elif eval_strategy == "max_dt":
-            from dynamite.inference.max_dt import evaluate
+            from dynamite.inference.multi_instance.max_dt import evaluate
         elif eval_strategy == "wlb":
-            from dynamite.inference.wlb import evaluate
+            from dynamite.inference.multi_instance.wlb import evaluate
         elif eval_strategy == "round_robin":
-            from dynamite.inference.round_robin import evaluate
+            from dynamite.inference.multi_instance.round_robin import evaluate
 
         model_name = cfg.MODEL.WEIGHTS.split("/")[-2]
-        model_name += f"_{eval_strategy}_V1"
+        model_name += f"_{eval_strategy}"
         if eval_strategy == "random":
             model_name+= f"_seed_{seed_id}"
     
         for idx,dataset_name in enumerate(["davis_2017_val","sbd_multi_insts","coco_2017_val"]):
-            # if cfg.ITERATIVE.TRAIN.USE_ARGMAX:
-            #     model_name+="_argmax"
-            # eval_strategy = cfg.EVALUATION_STRATEGY.TYPE
-            data_loader = cls.build_test_loader(cfg, dataset_name)
-            # if eval_strategy == "random":
-            #     model_name+= f"_seed_{seed_id}"
             
-            results_i = evaluate(model, data_loader,cfg, dataset_name, sampling_strategy=1,
+            data_loader = cls.build_test_loader(cfg, dataset_name)
+           
+            results_i = evaluate(model, data_loader, dataset_name, sampling_strategy=1,
                                 iou_threshold = 0.85, max_interactions = 10,
-                                eval_strategy = eval_strategy,seed_id=seed_id,normalize_time=True)
+                                eval_strategy = eval_strategy,seed_id=seed_id)
             results_i = comm.gather(results_i, dst=0)  # [res1:dict, res2:dict,...]
             if comm.is_main_process():
                 # sum the values with same keys
@@ -271,26 +265,12 @@ def setup(args):
     Create configs and perform basic setups.
     """
     cfg = get_cfg()
-    # for poly lr schedule
-    cfg.EVALUATION_STRATEGY = CN()
-    cfg.EVALUATION_STRATEGY.TYPE = args.eval_strategy
-    cfg.EVALUATION_STRATEGY.SEED_ID = args.seed_id
-    cfg.EVALUATION_STRATEGY.NORMALIZE_TIME = args.normalize_time
-
+ 
     add_deeplab_config(cfg)
     add_maskformer2_config(cfg)
     add_hrnet_config(cfg)
     cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
-   
-    eval_dataset = args.eval_dataset
-    cfg.DATASETS.TEST = (eval_dataset,)
-    cfg.ITERATIVE.TRAIN.USE_ARGMAX = True
-    
-    # cfg.EVALUATION_STRATEGY = CN()
-    cfg.EVALUATION_STRATEGY.TYPE = args.eval_strategy
-    cfg.EVALUATION_STRATEGY.SEED_ID = args.seed_id
-    cfg.EVALUATION_STRATEGY.NORMALIZE_TIME = args.normalize_time
     cfg.freeze()
     default_setup(cfg, args)
     # Setup logger for "mask_former" module
@@ -310,7 +290,7 @@ def main(args):
         DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
             cfg.MODEL.WEIGHTS, resume=args.resume
         )
-        res = Trainer.test(cfg, model)
+        res = Trainer.interactive_evaluation(cfg, model, args)
 
         return res
 

@@ -71,7 +71,7 @@ def get_gt_clicks_coords_eval(masks, image_shape, max_num_points=1, ignore_masks
     return num_clicks_per_object, fg_coords_list, orig_fg_coords_list
 
 
-def log_single_instance(res, max_interactions, dataset_name, model_name, ablation=False, save_summary_stats=False):
+def log_single_instance(res, max_interactions, dataset_name, model_name, save_summary_stats=False):
     logger = logging.getLogger(__name__)
     total_num_instances = sum(res['total_num_instances'])
     total_num_interactions = sum(res['total_num_interactions'])
@@ -114,12 +114,12 @@ def log_single_instance(res, max_interactions, dataset_name, model_name, ablatio
            total_num_instances,
            max_interactions]
 
-    if ablation:
-        save_stats_path = os.path.join("./output/evaluation/ablation", f'{dataset_name}.txt')
-        os.makedirs("./output/evaluation/ablation", exist_ok=True)
-    else:
-        save_stats_path = os.path.join("./output/evaluation/final", f'{dataset_name}.txt')
-        os.makedirs("./output/evaluation/final", exist_ok=True)
+    # if ablation:
+    #     save_stats_path = os.path.join("./output/evaluation/ablation", f'{dataset_name}.txt')
+    #     os.makedirs("./output/evaluation/ablation", exist_ok=True)
+    # else:
+    save_stats_path = os.path.join("./output/iccv/eval/", f'{dataset_name}.txt')
+    os.makedirs("./output/iccv/eval/", exist_ok=True)
 
     if not os.path.exists(save_stats_path):
         header = ["model",
@@ -145,7 +145,7 @@ def log_single_instance(res, max_interactions, dataset_name, model_name, ablatio
 
 
 def log_multi_instance(res, max_interactions, dataset_name, model_name, ablation=False,iou_threshold=0.85,
-                        save_stats_summary=True, sampling_strategy = 1):
+                        save_stats_summary=False, sampling_strategy = 1):
     logger = logging.getLogger(__name__)
     total_num_instances = sum(res['total_num_instances'])
     total_num_interactions = sum(res['total_num_interactions'])

@@ -27,7 +27,6 @@ class Predictor:
                 self.point_labels.append(0)
         self.point_coords= np.asarray(self.point_coords)
         self.point_labels = np.asarray(self.point_labels)
-        
 
         prev_masks = np.asarray(clicker.pred_masks, dtype=np.float32) if (clicker.pred_masks is not None) else None
         if prev_masks is not None:
@@ -37,7 +36,10 @@ class Predictor:
         else:
             pred_masks, _, _ = self.predictor.predict(point_coords=self.point_coords, point_labels=self.point_labels,
                                                     mask_input=None)
-        return pred_masks
+        pred_masks = np.max(pred_masks, axis=0)
+        # return pred_masks
+        return torch.from_numpy(pred_masks[None,:,:])
+
  
     
 

@@ -15,10 +15,8 @@ MODEL:
     COMMON_STRIDE: 4
     TRANSFORMER_ENC_LAYERS: 6
   MASK_FORMER:
-    # TRANSFORMER_DECODER_NAME: "InteractiveTransformerDecoder"
     INTERACTIVE_TRANSFORMER_NAME: "DynamiteInteractiveTransformer"
     TRANSFORMER_IN_FEATURE: "multi_scale_pixel_decoder"
-    # QUERY_INITIALIZER: "multi_scale" # OR single_scale
     DEEP_SUPERVISION: True
     MASK_WEIGHT: 5.0
     DICE_WEIGHT: 5.0
@@ -26,7 +24,6 @@ MODEL:
     NHEADS: 8
     DROPOUT: 0.0
     DIM_FEEDFORWARD: 2048
-    # ENC_LAYERS: 0
     PRE_NORM: False
     ENFORCE_INPUT_PROJ: False
     SIZE_DIVISIBILITY: 32
