@@ -144,7 +144,7 @@ def evaluate(
 
                     for i in indexes:
                         if ious[i]<iou_threshold: 
-                            obj_index = predictor.get_next_click(refine_obj_index=i, time_step=num_interactions)
+                            obj_index = clicker.get_next_click(refine_obj_index=i, time_step=num_interactions)
                             total_num_interactions+=1
                             
                             index_clicked[obj_index] = True
