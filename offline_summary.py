@@ -1,6 +1,6 @@
 #from mask2former.data.datasets.register_coco_mval_multi_insts import *
 from detectron2.data import DatasetCatalog, MetadataCatalog
-import debugpy
+# import debugpy
 import pickle
 from prettytable import PrettyTable
 import os

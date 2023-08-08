@@ -96,7 +96,7 @@ def evaluate(
 
             if vis_path:
                 clicker.save_visualization(save_results_path, ious=0, num_interactions=0)
-            num_instances = predictor.num_instances
+            num_instances = clicker.num_instances
             total_num_instances+=num_instances
 
             # we start with atleast one interaction per instance
