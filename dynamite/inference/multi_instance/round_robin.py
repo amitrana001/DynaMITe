@@ -81,8 +81,6 @@ def evaluate(
         random.seed(123456+seed_id)
         start_data_time = time.perf_counter()
         for idx, inputs in enumerate(data_loader):
-            if 'bg_mask' not in inputs[0]:
-                continue
             total_data_time += time.perf_counter() - start_data_time
             if idx == num_warmup:
                 start_time = time.perf_counter()
