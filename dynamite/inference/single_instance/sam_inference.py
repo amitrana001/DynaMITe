@@ -12,7 +12,7 @@ from detectron2.utils.colormap import colormap
 from detectron2.utils.comm import get_world_size
 from detectron2.utils.logger import log_every_n_seconds
 from torch import nn
-from ..utils.clicker import Clicker
+from ..utils.sam_clicker import Clicker
 from ..utils.sam_predictor_single_inst import Predictor
 color_map = colormap(rgb=True, maximum=1)
 
@@ -91,8 +91,8 @@ def get_avg_noc(
 
             pred_masks = predictor.get_prediction(clicker)
             clicker.set_pred_masks(pred_masks)
-            # ious = clicker.compute_iou_sam()
-            ious = clicker.compute_iou()
+            ious = clicker.compute_iou_sam()
+            # ious = clicker.compute_iou()
            
             per_image_iou_list.append(ious[0])
             while (num_interactions<max_interactions):
@@ -108,10 +108,8 @@ def get_avg_noc(
 
                 pred_masks = predictor.get_prediction(clicker)
                 clicker.set_pred_masks(pred_masks)
-                # ious = clicker.compute_iou_sam()
-                ious = clicker.compute_iou()
-
-               
+                ious = clicker.compute_iou_sam()
+                # ious = clicker.compute_iou()
                 per_image_iou_list.append(ious[0])
                
             dataset_iou_list[f"{inputs[0]['image_id']}_{idx}"] = np.asarray(per_image_iou_list)

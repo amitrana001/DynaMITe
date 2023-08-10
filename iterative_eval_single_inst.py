@@ -81,7 +81,7 @@ class Trainer(DefaultTrainer):
     @classmethod
     def build_test_loader(cls,cfg,dataset_name):
       
-        assert dataset_name in ["GrabCut","Berkeley", "coco_Mval", "davis_single_inst", "sbd_single_inst"]
+        assert dataset_name in ["pascal_voc_single","GrabCut","Berkeley", "coco_Mval", "davis_single_inst", "sbd_single_inst"]
            
         mapper = EvaluationDatasetMapper(cfg,False,dataset_name)
         return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
@@ -206,8 +206,10 @@ class Trainer(DefaultTrainer):
             )
 
         results = OrderedDict()
-        from dynamite.inference.single_instance.single_instance_inference import get_avg_noc
-        for dataset_name in ["GrabCut", "Berkeley", "davis_single_inst", "coco_Mval", 'sbd_single_inst']:
+        # from dynamite.inference.single_instance.single_instance_inference import get_avg_noc
+        from dynamite.inference.single_instance.sam_inference import get_avg_noc
+
+        for dataset_name in ["pascal_voc_single","GrabCut", "Berkeley", "davis_single_inst", "coco_Mval", 'sbd_single_inst']:
         # for dataset_name in ["coco_Mval"]:
             data_loader = cls.build_test_loader(cfg, dataset_name)
             
@@ -220,7 +222,7 @@ class Trainer(DefaultTrainer):
                 for s in range(0,2):
             
                     # model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + cfg.MODEL.WEIGHTS.split("/")[-1][5:-4] + f"_S{s}"
-                    model_name = cfg.MODEL.WEIGHTS.split("/")[-2] + cfg.MODEL.WEIGHTS.split("/")[-1][5:-4] + f"_S{s}"
+                    model_name = "sam_vitH"+ f"_S{s}"
 
                     results_i = get_avg_noc(model, data_loader, cfg, iou_threshold = iou,
                                             dataset_name=dataset_name,sampling_strategy=s,
