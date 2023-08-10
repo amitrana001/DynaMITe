@@ -29,13 +29,13 @@ class Predictor:
         self.point_coords= np.asarray(clicker.point_coords)
         self.point_labels = np.asarray(clicker.click_sequence)+1
 
-        # prev_masks = np.asarray(clicker.pred_masks, dtype=np.float32) if (clicker.pred_masks is not None) else None
-        # if prev_masks is not None:
-        #     prev_masks = cv2.resize(prev_masks[0][:,:,None], (256,256))
-        #     pred_masks, _, _ = self.predictor.predict(point_coords=self.point_coords, point_labels=self.point_labels,
-        #                                             mask_input=prev_masks[None,:,:])
-        # else:
-        pred_masks, _, _ = self.predictor.predict(point_coords=self.point_coords, point_labels=self.point_labels,
+        prev_masks = np.asarray(clicker.pred_masks, dtype=np.float32) if (clicker.pred_masks is not None) else None
+        if prev_masks is not None:
+            prev_masks = cv2.resize(prev_masks[0][:,:,None], (256,256))
+            pred_masks, _, _ = self.predictor.predict(point_coords=self.point_coords, point_labels=self.point_labels,
+                                                    mask_input=prev_masks[None,:,:])
+        else:
+            pred_masks, _, _ = self.predictor.predict(point_coords=self.point_coords, point_labels=self.point_labels,
                                                     mask_input=None)
         # pred_masks = np.max(pred_masks, axis=0)
         return pred_masks
