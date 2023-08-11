@@ -24,3 +24,12 @@ process is then iterated τ times until the masks are fully refined.
 ## <a name="Models"></a>Model Checkpoints
 
 ## Citing DynaMITe
+
+```BibTeX
+@inproceedings{RanaMahadevan23Arxiv,
+      title={DynaMITe: Dynamic Query Bootstrapping for Multi-object Interactive Segmentation Transformer},
+      author={Rana, Amit and Mahadevan, Sabarinath and Hermans, Alexander and Leibe, Bastian},
+      booktitle={ICCV},
+      year={2023}
+}
+```
