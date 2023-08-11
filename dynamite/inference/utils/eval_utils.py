@@ -12,7 +12,7 @@ from prettytable import PrettyTable
 from detectron2.utils.visualizer import Visualizer
 import torchvision.transforms.functional as F
 from dynamite.data.points.annotation_generator import create_circular_mask, get_max_dt_point_mask
-from offline_summary import get_statistics
+# from offline_summary import get_statistics
 
 def get_palette(num_cls):
     palette = np.zeros(3 * num_cls, dtype=np.int32)
@@ -156,68 +156,20 @@ def log_multi_instance(res, max_interactions, dataset_name, model_name, ablation
         )
     )
 
-    if save_stats_summary:
-        summary_stats = {}
-        summary_stats["sampling_strategy"] = f"S_{sampling_strategy}"
-        summary_stats["dataset"] = dataset_name
-        summary_stats["model"] = model_name
-        summary_stats["iou_threshold"] = iou_threshold
-       
-        summary_stats["total_computer_time"] = res['total_compute_time_str']
-        summary_stats["time_per_intreaction_tranformer_decoder"] = np.mean(
-            res['time_per_intreaction_tranformer_decoder']
-        )
-        summary_stats["time_per_image_features"] = np.mean(res['time_per_image_features'])
-        summary_stats["time_per_image_annotation"] = np.mean(res['time_per_image_annotation'])
-
-        ious_objects_per_interaction = {}
-        for _d in res['ious_objects_per_interaction']:
-            ious_objects_per_interaction.update(_d)
-        
-        click_sequence_per_image = {}
-        for _d in res['click_sequence_per_image']:
-            click_sequence_per_image.update(_d)
-        
-        object_areas_per_image = {}
-        for _d in res['object_areas_per_image']:
-            object_areas_per_image.update(_d)
-        
-        fg_click_coords_per_image = {}
-        for _d in res['object_areas_per_image']:
-            fg_click_coords_per_image.update(_d)
-        
-        bg_click_coords_per_image = {}
-        for _d in res['object_areas_per_image']:
-            bg_click_coords_per_image.update(_d)
-       
-        summary_stats["click_sequence_per_image"] = click_sequence_per_image
-        summary_stats["ious_objects_per_interaction"] = ious_objects_per_interaction
-        summary_stats['object_areas_per_image'] =  object_areas_per_image
-        summary_stats['fg_click_coords_per_image'] =  fg_click_coords_per_image
-        summary_stats['bg_click_coords_per_image'] =  bg_click_coords_per_image
-
-        get_statistics(summary_stats)
-        if ablation:
-            save_summary_path = os.path.join(f"./output/evaluation/ablation/summary/{dataset_name}")
-        else:
-            save_summary_path = os.path.join(f"./output/evaluation/final/summary/{dataset_name}")
-        os.makedirs(save_summary_path, exist_ok=True)
-        stats_file = os.path.join(save_summary_path,
-                                  f"{model_name}_{max_interactions}.pickle")
-        
-        with open(stats_file, 'wb') as handle:
-            pickle.dump(summary_stats, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    else:
-        summary_stats = {}
-        summary_stats["sampling_strategy"] = f"S_{sampling_strategy}"
-        summary_stats["dataset"] = dataset_name
-        summary_stats["model"] = model_name
-        summary_stats["iou_threshold"] = iou_threshold
-        ious_objects_per_interaction = {}
-        for _d in res['ious_objects_per_interaction']:
-            ious_objects_per_interaction.update(_d)
-        summary_stats["ious_objects_per_interaction"] = ious_objects_per_interaction
-        get_statistics(summary_stats)
+    summary_stats = {}
+    summary_stats["sampling_strategy"] = f"S_{sampling_strategy}"
+    summary_stats["dataset"] = dataset_name
+    summary_stats["model"] = model_name
+    summary_stats["iou_threshold"] = iou_threshold
+    num_interactions_per_image = {}
+    for _d in res['num_interactions_per_image']:
+        num_interactions_per_image.update(_d)
+    ious_objects_per_interaction = {}
+    for _d in res['ious_objects_per_interaction']:
+        ious_objects_per_interaction.update(_d)
+    summary_stats["ious_objects_per_interaction"] = ious_objects_per_interaction
+    summary_stats["num_interactions_per_image"] = num_interactions_per_image
+    get_statistics(summary_stats)
 
 def get_summary(dataset_iou_list, max_clicks=20, iou_thres=0.85):
 
@@ -239,3 +191,80 @@ def get_summary(dataset_iou_list, max_clicks=20, iou_thres=0.85):
         total_clicks+=num_clicks
     
     return np.round(total_clicks/num_images,2), failed_objects, np.round(total_iou/num_images,4)
+
+def get_statistics(summary_stats, save_stats_path=None):
+    # with open(pickle_path, 'rb') as handle:
+    #     summary_stats= pickle.load(handle)
+    
+    model_name =  summary_stats["model"] 
+    dataset_name = summary_stats["dataset"]
+    iou_threshold = summary_stats["iou_threshold"]
+    # clicked_objects_per_interaction = summary_stats["clicked_objects_per_interaction"]
+    ious_objects_per_interaction = summary_stats["ious_objects_per_interaction"]
+    num_interactions_per_image = summary_stats["num_interactions_per_image"]
+    # object_areas_per_image = summary_stats['object_areas_per_image']
+    # fg_click_coords_per_image = summary_stats['fg_click_coords_per_image']  
+    # bg_click_coords_per_image = summary_stats['bg_click_coords_per_image']  
+    
+
+    NFO = 0
+    NFI = 0
+    NCI_all = 0.0
+    NCI_suc = 0.0
+    Avg_IOU = 0.0
+    total_images = len(list(ious_objects_per_interaction.keys()))
+    total_num_instances = 0
+    for _image_id in ious_objects_per_interaction.keys():
+        final_ious = ious_objects_per_interaction[_image_id][-1]
+
+        # total_interactions_per_image = len(ious_objects_per_interaction[_image_id]) + len(final_ious)-1
+        total_interactions_per_image = num_interactions_per_image[_image_id]
+        # assert total_interactions_per_image == num_interactions_per_image[_image_id]
+
+        Avg_IOU += sum(final_ious)/len(final_ious)
+        NCI_all += total_interactions_per_image/len(final_ious)
+        total_num_instances += len(final_ious)
+
+        _is_failed_image = False
+        _suc = 0
+        for i, iou in enumerate(final_ious):
+            if iou<iou_threshold:
+                _is_failed_image = True
+                NFO +=1
+            else:
+                _suc+=1
+        if _suc!=0:
+            NCI_suc += total_interactions_per_image/_suc
+        else:
+            NCI_suc += total_interactions_per_image
+        if _is_failed_image:
+            NFI+=1
+
+    NCI_all/=total_images
+    NCI_suc/=total_images
+    Avg_IOU/=total_images
+                
+    row = [model_name, NCI_all, NCI_suc, NFI, NFO, Avg_IOU, iou_threshold, 10, total_num_instances]
+
+    table = PrettyTable()
+    table.field_names = ["dataset", "NCI_all", "NCI_suc", "NFI", "NFO", "Avg_IOU", "#samples"]
+    table.add_row([dataset_name, NCI_all, NCI_suc, NFI, NFO, Avg_IOU, total_num_instances])
+
+    print(table)
+    
+    if save_stats_path is not None:
+        save_stats_path = os.path.join(save_stats_path, f'{dataset_name}.txt')
+    else:
+        save_stats_path = os.path.join("./output/iccv/eval", f'{dataset_name}.txt')
+        os.makedirs("./output/iccv/eval", exist_ok=True)
+    if not os.path.exists(save_stats_path):
+        # print("No File")
+        header = ['model', "NCI_all", "NCI_suc", "NFI", "NFO", "Avg_IOU", 'IOU_thres',"max_num_iters", "num_inst"]
+        with open(save_stats_path, 'w') as f:
+            writer = csv.writer(f, delimiter= "\t")
+            writer.writerow(header)
+            # writer.writerow(row)
+
+    with open(save_stats_path, 'a') as f:
+        writer = csv.writer(f, delimiter= "\t")
+        writer.writerow(row)

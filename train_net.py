@@ -184,6 +184,11 @@ class Trainer(DefaultTrainer):
     @classmethod
     def test(cls, cfg, model, evaluators=None):
         
+        """
+        Method is called after every Evaluation Checkpoint iteration.
+        You can evaluate on any dataset and log the results/metrics 
+        for debugging and performance measure puposes.
+        """
         cls.interactive_evaluation(cfg,model)
         return {}
 
@@ -203,8 +208,11 @@ class Trainer(DefaultTrainer):
         Returns:
             dict: a dict of result metrics
         """
+        if not args:
+            return 
+
         logger = logging.getLogger(__name__)
-       
+
         if args and args.eval_only:
             eval_datasets = args.eval_datasets
             vis_path = args.vis_path
@@ -213,15 +221,8 @@ class Trainer(DefaultTrainer):
             seed_id = args.seed_id
             iou_threshold = args.iou_threshold
             max_interactions = args.max_interactions
-        else:
-            eval_datasets = cfg.DATASETS.TEST
-            vis_path = None
-            save_stats_summary = False
-            eval_strategy = cfg.ITERATIVE.TEST.EVAL_STRATEGY
-            iou_threshold = args.ITERATIVE.TEST.IOU_THRESHOLD
-            max_interactions = args.ITERATIVE.TEST.MAX_NUM_INTERACTIONS
-            seed_id = 0
         
+        assert iou_threshold in [0.80, 0.85, 0.90, 0.95, 1.00]
         for dataset_name in eval_datasets:
 
             if dataset_name in ["GrabCut", "Berkeley", "davis_single_inst", "coco_Mval", 'sbd_single_inst']:
@@ -307,7 +308,7 @@ def main(args):
             cfg.MODEL.WEIGHTS, resume=args.resume
         )
         # res = Trainer.test(cfg, model)
-        res = Trainer.interactive_evaluation(cfg,args,model)
+        res = Trainer.interactive_evaluation(cfg,model, args)
 
         return res
 

@@ -107,7 +107,7 @@ def evaluate(
         total_num_interactions = 0
         
         ious_objects_per_interaction = defaultdict(list)
-        
+        num_interactions_per_image = {}
         if save_stats_summary:
             object_areas_per_image = {}
             fg_click_coords_per_image = {}
@@ -154,7 +154,7 @@ def evaluate(
 
             random_indexes = list(range(len(ious)))
 
-            ious_objects_per_interaction[f"{inputs[0]['image_id']}_{idx}"].append(ious)
+            # ious_objects_per_interaction[f"{inputs[0]['image_id']}_{idx}"].append(ious)
 
             #interative refinement loop
             while (num_interactions<max_iters_for_image):
@@ -191,8 +191,10 @@ def evaluate(
                     
                     if vis_path:
                         clicker.save_visualization(save_results_path, ious=ious, num_interactions=num_interactions)
-                    ious_objects_per_interaction[f"{inputs[0]['image_id']}_{idx}"].append(ious)
-                
+                    # ious_objects_per_interaction[f"{inputs[0]['image_id']}_{idx}"].append(ious)
+
+            ious_objects_per_interaction[f"{inputs[0]['image_id']}_{idx}"].append(ious)
+            num_interactions_per_image[f"{inputs[0]['image_id']}_{idx}"] = num_interactions
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
             
@@ -247,6 +249,7 @@ def evaluate(
                 'total_compute_time_str': total_compute_time_str,
                 'iou_threshold': iou_threshold,
                 'ious_objects_per_interaction': [ious_objects_per_interaction],
+                'num_interactions_per_image': [num_interactions_per_image],
     }
     if save_stats_summary:
         results['click_sequence_per_image'] = [click_sequence_per_image],
