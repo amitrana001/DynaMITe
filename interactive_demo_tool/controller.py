@@ -5,7 +5,7 @@ import cv2
 from interactive_demo_tool import clicker
 from detectron2.data import transforms as T
 import copy
-from dynamite.utils.vis import color_map
+from dynamite.utils.misc import color_map
 
 class InteractiveController:
     def __init__(self, model, update_image_callback, cfg):

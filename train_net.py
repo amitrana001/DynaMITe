@@ -222,18 +222,21 @@ class Trainer(DefaultTrainer):
             iou_threshold = args.iou_threshold
             max_interactions = args.max_interactions
         
-        assert iou_threshold in [0.80, 0.85, 0.90, 0.95, 1.00]
+        # assert iou_threshold in [0.80, 0.85, 0.90, 0.95, 1.00]
+        assert iou_threshold>=0.80
+
         for dataset_name in eval_datasets:
 
             if dataset_name in ["GrabCut", "Berkeley", "davis_single_inst", "coco_Mval", 'sbd_single_inst']:
                 from dynamite.inference.single_instance.single_instance_inference import get_avg_noc
+
+                # from dynamite.inference.single_instance.sam_inference import get_avg_noc
                 data_loader = cls.build_test_loader(cfg, dataset_name)
                 
-                model_name = cfg.MODEL.WEIGHTS
-                results_i = get_avg_noc(model, data_loader, cfg, iou_threshold = iou_threshold,
-                                        dataset_name=dataset_name,sampling_strategy=1,
-                                        max_interactions=max_interactions,vis_path=vis_path,
-                                        save_stats_summary=save_stats_summary)
+                results_i = get_avg_noc(model, data_loader, iou_threshold = iou_threshold,
+                                        sampling_strategy=1, max_interactions=max_interactions,
+                                        vis_path=vis_path
+                                        )
                 results_i = comm.gather(results_i, dst=0)  # [res1:dict, res2:dict,...]
                 if comm.is_main_process():
                     # sum the values with same keys
@@ -244,7 +247,7 @@ class Trainer(DefaultTrainer):
                         for k in _d.keys():
                             res_gathered[k] += _d[k]
                     log_single_instance(res_gathered, max_interactions=max_interactions, 
-                                        dataset_name=dataset_name, model_name=model_name,save_stats_summary=save_stats_summary)
+                                        dataset_name=dataset_name, iou_threshold=iou_threshold)
             elif dataset_name in ["davis_2017_val","sbd_multi_insts","coco_2017_val"]:
                 
                 if eval_strategy in ["random", "best", "worst"]:
@@ -258,10 +261,10 @@ class Trainer(DefaultTrainer):
                 
                 data_loader = cls.build_test_loader(cfg, dataset_name)
                 
-                model_name = cfg.MODEL.WEIGHTS
-                results_i = evaluate(model, data_loader, dataset_name, sampling_strategy=1, 
-                                    iou_threshold = 0.85, max_interactions = 10, save_stats_summary=save_stats_summary,
-                                    eval_strategy = eval_strategy,seed_id=seed_id, vis_path=vis_path)
+                results_i = evaluate(model, data_loader, iou_threshold = iou_threshold,
+                                    max_interactions = max_interactions,
+                                    eval_strategy = eval_strategy, seed_id=seed_id,
+                                    vis_path=vis_path)
                 results_i = comm.gather(results_i, dst=0)  # [res1:dict, res2:dict,...]
                 if comm.is_main_process():
                     # sum the values with same keys
@@ -271,9 +274,8 @@ class Trainer(DefaultTrainer):
                     for _d in results_i:
                         for k in _d.keys():
                             res_gathered[k] += _d[k]
-                    log_multi_instance(res_gathered, max_interactions=10,
-                                    dataset_name=dataset_name, model_name=model_name,
-                                    sampling_strategy=1)
+                    log_multi_instance(res_gathered, max_interactions=max_interactions,
+                                    dataset_name=dataset_name, iou_threshold=iou_threshold)
 
 
 def setup(args):
@@ -296,11 +298,10 @@ def setup(args):
 
 def main(args):
     
-
-    # import debugpy
-    # debugpy.listen(5678)
-    # print("Waiting for debugger")
-    # debugpy.wait_for_client()
+    import debugpy
+    debugpy.listen(5678)
+    print("Waiting for debugger")
+    debugpy.wait_for_client()
     cfg = setup(args)
     if args.eval_only:
         model = Trainer.build_model(cfg)

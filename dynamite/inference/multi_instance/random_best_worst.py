@@ -22,12 +22,11 @@ from ..utils.clicker import Clicker
 from ..utils.predictor import Predictor
 
 def evaluate(
-    model, data_loader, dataset_name=None, save_stats_summary = False, 
-    iou_threshold = 0.85, max_interactions = 10, sampling_strategy=1,
+    model, data_loader, iou_threshold = 0.85, max_interactions = 10, sampling_strategy=1,
     eval_strategy = "worst", seed_id = 0, vis_path = None
 ):
     """
-    Run model on the data_loader and return a dict later used to calculate
+    Run model on the data_loader and return a dict, later used to calculate
     all the metrics for multi-instance inteactive segmentation such as NCI,
     NFO, NFI, and Avg IoU.
     The model will be used in eval mode.
@@ -40,12 +39,6 @@ def evaluate(
             wrap the given model and override its behavior of `.eval()` and `.train()`.
         data_loader: an iterable object with a length.
             The elements it generates will be the inputs to the model.
-        dataset_name: str
-            Name of the dataset (used for logging purpose)
-        save_stats_summary: bool
-            TO gather all the statistics such as
-            - foreground and background clicks list
-            - click sequence
         iou_threshold: float
             Desired IoU value for each object mask
         max_interactions: int
@@ -58,7 +51,7 @@ def evaluate(
         eval_strategy: str
             Click sampling strategy during refinement
         seed_id: int
-            To fix seed during evaluation
+            Used to generate fixed seed during evaluation
         vis_path: str
             Path to save visualization of masks with clicks during evaluation
 
@@ -68,18 +61,10 @@ def evaluate(
             'total_num_interactions': total number of interactions/clicks sampled 
             'total_compute_time_str': total compute time for evaluating the dataset
             'iou_threshold': iou_threshold
-            'ious_objects_per_interaction': a dict with keys as image ids and values as
-            list of ious of all objects aster each interaction/refinement
-                        
-        Additional keys if save_stats_summary = True:
-            'click_sequence_per_image': a dict with keys as image ids and values as
-            list of object ids clicked in sequence during refinement
-            'object_areas_per_image': a dict with keys as image ids and values as 
-            list of ratios of object mask with the image area
-            'fg_click_coords_per_image': a dict with keys as image ids and values as 
-            list of list of click coords for each object
-            'bg_click_coords_per_image': a dict with keys as image ids and values as 
-            list of click coords for background
+            'num_interactions_per_image': a dict with keys as image ids and values 
+             as total number of interactions per image
+            'final_iou_per_object': a dict with keys as image ids and values as
+             list of ious of all objects after final interaction
     """
     
     num_devices = get_world_size()
@@ -94,9 +79,6 @@ def evaluate(
     total_data_time = 0 
     total_compute_time = 0
     total_eval_time = 0
-
-    if vis_path:
-        save_results_path = os.path.join(vis_path, dataset_name)
     
     with ExitStack() as stack:
         if isinstance(model, nn.Module):
@@ -106,13 +88,9 @@ def evaluate(
         total_num_instances = 0
         total_num_interactions = 0
         
-        ious_objects_per_interaction = defaultdict(list)
+        final_iou_per_object = defaultdict(list)
         num_interactions_per_image = {}
-        if save_stats_summary:
-            object_areas_per_image = {}
-            fg_click_coords_per_image = {}
-            bg_click_coords_per_image = {}
-            click_sequence_per_image = {}
+
         random.seed(123456+seed_id)
         start_data_time = time.perf_counter()
         for idx, inputs in enumerate(data_loader):
@@ -130,7 +108,7 @@ def evaluate(
             predictor = Predictor(model)
 
             if vis_path:
-                clicker.save_visualization(save_results_path, ious=0, num_interactions=0)
+                clicker.save_visualization(vis_path, ious=[0], num_interactions=0)
             num_instances = clicker.num_instances
             total_num_instances+=num_instances
 
@@ -148,13 +126,11 @@ def evaluate(
             ious = clicker.compute_iou()
 
             if vis_path:
-                clicker.save_visualization(save_results_path, ious=ious, num_interactions=num_interactions)
+                clicker.save_visualization(vis_path, ious=ious, num_interactions=num_interactions)
 
             point_sampled = True
 
             random_indexes = list(range(len(ious)))
-
-            # ious_objects_per_interaction[f"{inputs[0]['image_id']}_{idx}"].append(ious)
 
             #interative refinement loop
             while (num_interactions<max_iters_for_image):
@@ -190,20 +166,15 @@ def evaluate(
                     ious = clicker.compute_iou()
                     
                     if vis_path:
-                        clicker.save_visualization(save_results_path, ious=ious, num_interactions=num_interactions)
-                    # ious_objects_per_interaction[f"{inputs[0]['image_id']}_{idx}"].append(ious)
+                        clicker.save_visualization(vis_path, ious=ious, num_interactions=num_interactions)
+                    # final_iou_per_object[f"{inputs[0]['image_id']}_{idx}"].append(ious)
 
-            ious_objects_per_interaction[f"{inputs[0]['image_id']}_{idx}"].append(ious)
-            num_interactions_per_image[f"{inputs[0]['image_id']}_{idx}"] = num_interactions
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
-            
-            if save_stats_summary:
-                object_areas_per_image[f"{inputs[0]['image_id']}_{idx}"] = clicker.get_obj_areas()
-                click_sequence_per_image[f"{inputs[0]['image_id']}_{idx}"] = clicker.click_sequence
-                fg_click_coords_per_image[f"{inputs[0]['image_id']}_{idx}"] = clicker.fg_orig_coords
-                bg_click_coords_per_image[f"{inputs[0]['image_id']}_{idx}"] = clicker.bg_orig_coords
            
+            final_iou_per_object[f"{inputs[0]['image_id']}_{idx}"].append(ious)
+            num_interactions_per_image[f"{inputs[0]['image_id']}_{idx}"] = num_interactions
+            
             total_compute_time += time.perf_counter() - start_compute_time
 
             iters_after_start = idx + 1 - num_warmup * int(idx >= num_warmup)
@@ -248,15 +219,10 @@ def evaluate(
                 'total_num_interactions': [total_num_interactions],
                 'total_compute_time_str': total_compute_time_str,
                 'iou_threshold': iou_threshold,
-                'ious_objects_per_interaction': [ious_objects_per_interaction],
+                'final_iou_per_object': [final_iou_per_object],
                 'num_interactions_per_image': [num_interactions_per_image],
     }
-    if save_stats_summary:
-        results['click_sequence_per_image'] = [click_sequence_per_image],
-        results['object_areas_per_image'] = [object_areas_per_image],
-        results['fg_click_coords_per_image'] = [fg_click_coords_per_image],
-        results['bg_click_coords_per_image'] = [bg_click_coords_per_image],
-        
+
     return results
 
 

@@ -32,7 +32,7 @@ def get_palette(num_cls):
 color_map = get_palette(80)[1:]
 
 def get_gt_clicks_coords_eval(masks, image_shape, max_num_points=1, ignore_masks=None,
-                                   first_click_center=True, t= 0):
+                             first_click_center=True, t= 0):
 
     """
     :param masks: numpy array of shape I x H x W
@@ -71,7 +71,7 @@ def get_gt_clicks_coords_eval(masks, image_shape, max_num_points=1, ignore_masks
     return num_clicks_per_object, fg_coords_list, orig_fg_coords_list
 
 
-def log_single_instance(res, max_interactions, dataset_name, model_name, save_summary_stats=False):
+def log_single_instance(res, max_interactions, dataset_name, iou_threshold = 0.80):
     logger = logging.getLogger(__name__)
     total_num_instances = sum(res['total_num_instances'])
     total_num_interactions = sum(res['total_num_interactions'])
@@ -96,56 +96,25 @@ def log_single_instance(res, max_interactions, dataset_name, model_name, save_su
     
     assert total_num_instances == len(dataset_iou_list)
     
-    if save_summary_stats:
-        save_summary_path = os.path.join(f"./output/evaluation/final/summary/{dataset_name}")
-        os.makedirs(save_summary_path, exist_ok=True)
-        stats_file = os.path.join(save_summary_path,
-                                    f"{model_name}_{max_interactions}.pickle")
+    field_names = ["dataset"]
+    row = [dataset_name]
+    iou = 0.80
+    while round(iou,2)<=iou_threshold:
+        NOC, NFO, IOU = get_summary(dataset_iou_list, max_clicks=max_interactions, iou_thres=iou)
+        field_names.extend([f"NoC_{int(iou*100)}", f"NFO_{int(iou*100)}"])
+        row.extend([NOC, NFO])
+        iou+=0.05
 
-        with open(stats_file, 'wb') as handle:
-            pickle.dump(dataset_iou_list, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    field_names.extend(["#samples","#clicks"])
+    row.extend([total_num_instances, max_interactions])
 
-    NOC_80, NFO_80, IOU_80 = get_summary(dataset_iou_list, max_clicks=max_interactions, iou_thres=0.80)
-    NOC_85, NFO_85, IOU_85 = get_summary(dataset_iou_list, max_clicks=max_interactions, iou_thres=0.85)
-    NOC_90, NFO_90, IOU_90 = get_summary(dataset_iou_list, max_clicks=max_interactions, iou_thres=0.90)
-
-    row = [model_name,
-           NOC_80, NOC_85, NOC_90, NFO_80, NFO_85, NFO_90, IOU_80, IOU_85, IOU_90,
-           total_num_instances,
-           max_interactions]
-
-    # if ablation:
-    #     save_stats_path = os.path.join("./output/evaluation/ablation", f'{dataset_name}.txt')
-    #     os.makedirs("./output/evaluation/ablation", exist_ok=True)
-    # else:
-    save_stats_path = os.path.join("./output/iccv/eval/", f'{dataset_name}.txt')
-    os.makedirs("./output/iccv/eval/", exist_ok=True)
-
-    if not os.path.exists(save_stats_path):
-        header = ["model",
-                  "NOC_80", "NOC_85", "NOC_90", "NFO_80","NFO_85","NFO_90","IOU_80","IOU_85", "IOU_90",
-                  "#samples","#clicks"]
-        with open(save_stats_path, 'w') as f:
-            writer = csv.writer(f, delimiter= "\t")
-            writer.writerow(header)
-            # writer.writerow(row)
-    
-    with open(save_stats_path, 'a') as f:
-        writer = csv.writer(f, delimiter="\t")
-        writer.writerow(row)
-
-    
     table = PrettyTable()
-    table.field_names = ["dataset", "NOC_80", "NOC_85", "NOC_90", "NFO_80", "NFO_85", "NFO_90", "#samples",
-                         "#clicks"]
-    table.add_row(
-        [dataset_name, NOC_80, NOC_85, NOC_90, NFO_80, NFO_85, NFO_90, total_num_instances, max_interactions])
-
+    table.field_names = field_names
+    table.add_row(row)
     print(table)
 
 
-def log_multi_instance(res, max_interactions, dataset_name, model_name, ablation=False,iou_threshold=0.85,
-                        save_stats_summary=False, sampling_strategy = 1):
+def log_multi_instance(res, dataset_name, iou_threshold=0.85, max_interactions = 10):
     logger = logging.getLogger(__name__)
     total_num_instances = sum(res['total_num_instances'])
     total_num_interactions = sum(res['total_num_interactions'])
@@ -157,19 +126,18 @@ def log_multi_instance(res, max_interactions, dataset_name, model_name, ablation
     )
 
     summary_stats = {}
-    summary_stats["sampling_strategy"] = f"S_{sampling_strategy}"
     summary_stats["dataset"] = dataset_name
-    summary_stats["model"] = model_name
     summary_stats["iou_threshold"] = iou_threshold
+    summary_stats["max_interactions"] = max_interactions
     num_interactions_per_image = {}
     for _d in res['num_interactions_per_image']:
         num_interactions_per_image.update(_d)
-    ious_objects_per_interaction = {}
-    for _d in res['ious_objects_per_interaction']:
-        ious_objects_per_interaction.update(_d)
-    summary_stats["ious_objects_per_interaction"] = ious_objects_per_interaction
+    final_iou_per_object = {}
+    for _d in res['final_iou_per_object']:
+        final_iou_per_object.update(_d)
+    summary_stats["final_iou_per_object"] = final_iou_per_object
     summary_stats["num_interactions_per_image"] = num_interactions_per_image
-    get_statistics(summary_stats)
+    get_multi_inst_metrices(summary_stats)
 
 def get_summary(dataset_iou_list, max_clicks=20, iou_thres=0.85):
 
@@ -192,34 +160,26 @@ def get_summary(dataset_iou_list, max_clicks=20, iou_thres=0.85):
     
     return np.round(total_clicks/num_images,2), failed_objects, np.round(total_iou/num_images,4)
 
-def get_statistics(summary_stats, save_stats_path=None):
-    # with open(pickle_path, 'rb') as handle:
-    #     summary_stats= pickle.load(handle)
-    
-    model_name =  summary_stats["model"] 
+def get_multi_inst_metrices(summary_stats):
+   
     dataset_name = summary_stats["dataset"]
     iou_threshold = summary_stats["iou_threshold"]
-    # clicked_objects_per_interaction = summary_stats["clicked_objects_per_interaction"]
-    ious_objects_per_interaction = summary_stats["ious_objects_per_interaction"]
-    num_interactions_per_image = summary_stats["num_interactions_per_image"]
-    # object_areas_per_image = summary_stats['object_areas_per_image']
-    # fg_click_coords_per_image = summary_stats['fg_click_coords_per_image']  
-    # bg_click_coords_per_image = summary_stats['bg_click_coords_per_image']  
+    max_interactions = summary_stats["max_interactions"]
     
-
+    final_iou_per_object = summary_stats["final_iou_per_object"]
+    num_interactions_per_image = summary_stats["num_interactions_per_image"]
+  
     NFO = 0
     NFI = 0
     NCI_all = 0.0
     NCI_suc = 0.0
     Avg_IOU = 0.0
-    total_images = len(list(ious_objects_per_interaction.keys()))
+    total_images = len(list(final_iou_per_object.keys()))
     total_num_instances = 0
-    for _image_id in ious_objects_per_interaction.keys():
-        final_ious = ious_objects_per_interaction[_image_id][-1]
+    for _image_id in final_iou_per_object.keys():
 
-        # total_interactions_per_image = len(ious_objects_per_interaction[_image_id]) + len(final_ious)-1
+        final_ious = final_iou_per_object[_image_id][-1]
         total_interactions_per_image = num_interactions_per_image[_image_id]
-        # assert total_interactions_per_image == num_interactions_per_image[_image_id]
 
         Avg_IOU += sum(final_ious)/len(final_ious)
         NCI_all += total_interactions_per_image/len(final_ious)
@@ -244,27 +204,8 @@ def get_statistics(summary_stats, save_stats_path=None):
     NCI_suc/=total_images
     Avg_IOU/=total_images
                 
-    row = [model_name, NCI_all, NCI_suc, NFI, NFO, Avg_IOU, iou_threshold, 10, total_num_instances]
-
     table = PrettyTable()
-    table.field_names = ["dataset", "NCI_all", "NCI_suc", "NFI", "NFO", "Avg_IOU", "#samples"]
-    table.add_row([dataset_name, NCI_all, NCI_suc, NFI, NFO, Avg_IOU, total_num_instances])
+    table.field_names = ["dataset", "NCI", "NFI", "NFO", "Avg_IOU", "#samples", "#clicks"]
+    table.add_row([dataset_name, NCI_all, NFI, NFO, Avg_IOU, total_num_instances, max_interactions])
 
     print(table)
-    
-    if save_stats_path is not None:
-        save_stats_path = os.path.join(save_stats_path, f'{dataset_name}.txt')
-    else:
-        save_stats_path = os.path.join("./output/iccv/eval", f'{dataset_name}.txt')
-        os.makedirs("./output/iccv/eval", exist_ok=True)
-    if not os.path.exists(save_stats_path):
-        # print("No File")
-        header = ['model', "NCI_all", "NCI_suc", "NFI", "NFO", "Avg_IOU", 'IOU_thres',"max_num_iters", "num_inst"]
-        with open(save_stats_path, 'w') as f:
-            writer = csv.writer(f, delimiter= "\t")
-            writer.writerow(header)
-            # writer.writerow(row)
-
-    with open(save_stats_path, 'a') as f:
-        writer = csv.writer(f, delimiter= "\t")
-        writer.writerow(row)

@@ -17,8 +17,8 @@ from ..utils.predictor import Predictor
 color_map = colormap(rgb=True, maximum=1)
 
 def get_avg_noc(
-    model, data_loader, cfg, iou_threshold = 0.90, dataset_name= None,
-    max_interactions = 20, sampling_strategy=1,save_stats_summary=False, vis_path = None
+    model, data_loader, iou_threshold = 0.90, max_interactions = 20,
+    sampling_strategy=1, vis_path = None
 ):
     """
     Run model on the data_loader and evaluate the metrics with evaluator.
@@ -81,6 +81,9 @@ def get_avg_noc(
             clicker = Clicker(inputs, sampling_strategy)
             predictor = Predictor(model)
 
+            if vis_path:
+                clicker.save_visualization(vis_path, ious=0, num_interactions=0)
+
             num_instances = clicker.num_instances
             total_num_instances+=num_instances
 
@@ -92,7 +95,10 @@ def get_avg_noc(
             pred_masks = predictor.get_prediction(clicker)
             clicker.set_pred_masks(pred_masks)
             ious = clicker.compute_iou()
-           
+
+            if vis_path:
+                clicker.save_visualization(vis_path, ious=ious, num_interactions=num_interactions)
+
             per_image_iou_list.append(ious[0])
             while (num_interactions<max_interactions):
                 
@@ -108,7 +114,10 @@ def get_avg_noc(
                 pred_masks = predictor.get_prediction(clicker)
                 clicker.set_pred_masks(pred_masks)
                 ious = clicker.compute_iou()
-               
+
+                if vis_path:
+                    clicker.save_visualization(vis_path, ious=ious, num_interactions=num_interactions)
+
                 per_image_iou_list.append(ious[0])
                
             dataset_iou_list[f"{inputs[0]['image_id']}_{idx}"] = np.asarray(per_image_iou_list)

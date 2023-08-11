@@ -4,7 +4,7 @@ import numpy as np
 import cv2
 from dynamite.data.points.annotation_generator import create_circular_mask
 import os
-from dynamite.utils.vis import color_map
+from dynamite.utils.misc import color_map
 
 class Clicker:
 
