@@ -29,7 +29,7 @@ _PREDEFINED_SPLITS_COCO_LVIS_2017 = {
 "coco_lvis_2017_train": ("lvis/train/hannotation.pickle",
 "lvis/train/images",
 "lvis/train/masks",
-"lvis/coco_lvis_combined_panoptic.pickle"),
+"lvis/coco_lvis_combined.pickle"),
 }
 
 

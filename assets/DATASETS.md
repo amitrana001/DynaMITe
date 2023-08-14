@@ -44,7 +44,7 @@ We downloaded all the datasets following the links provided in [RITM github page
 
 ## Expected dataset structure for [COCO+LVIS](https://cocodataset.org/#download):
 
-Either download the compiled COCO+LVIS dataset ([coco_lvis_combined.pickle](link)) in detectron2 format or download the [original LVIS images](https://www.lvisdataset.org/dataset) and combined annotations by [RITM](https://github.com/SamsungLabs/ritm_interactive_segmentation/tree/master) ([hannotation.pickle](https://github.com/saic-vul/ritm_interactive_segmentation/releases/download/v1.0/cocolvis_annotation.tar.gz)).
+Either download the compiled COCO+LVIS dataset ([coco_lvis_combined.pickle](https://drive.google.com/file/d/1TaA5tXk8H3tTZdX5JZc-I_vCQf4AI2Y2/view?usp=drive_link)) in detectron2 format or download the [original LVIS images](https://www.lvisdataset.org/dataset) and combined annotations by [RITM](https://github.com/SamsungLabs/ritm_interactive_segmentation/tree/master) ([hannotation.pickle](https://github.com/saic-vul/ritm_interactive_segmentation/releases/download/v1.0/cocolvis_annotation.tar.gz)).
 ```
 DETECTRON2_DATASETS
 └── lvis
