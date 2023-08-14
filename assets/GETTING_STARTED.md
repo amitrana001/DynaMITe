@@ -5,22 +5,6 @@ This document provides a brief intro of the usage of DynaMITe.
 Please see [Getting Started with Detectron2](https://github.com/facebookresearch/detectron2/blob/master/GETTING_STARTED.md) for full usage.
 
 
-### Interactive Demo with Pre-trained Models
-
-1. Pick a model and its config file from
-  [model zoo](MODEL_ZOO.md),
-  for example, `configs/coco_lvis/swin/dynamite_swin_tiny_bs32_ep50.yaml`.
-2. We provide `demo.py` that is able to demo builtin configs. Run it with:
-```
-
-python demo.py --config-file configs/coco_lvis/swin/dynamite_swin_tiny_bs32_ep50.yaml \
-  --model-weights /path/to/checkpoint_file
-```
-The configs are made for training, therefore we need to specify 'model-weights' to a model from model zoo for evaluation.
-This command will open an OpenCV window where you can select any image and perform interactive segementation on it.
-All the buttons in the tool are self-explaintory.
-
-
 ### Training
 
 We provide a script `train_net.py`, that is made to train all the configs provided in DynaMITe.

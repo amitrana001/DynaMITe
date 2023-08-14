@@ -15,13 +15,32 @@
   <img src="https://github.com/amitrana001/DynaMITe/blob/final/assets/demo.png" width="100%" height="100%"/>
 </div><br/>
 
+1. Pick a model and its config file from
+  [model zoo](assets/MODEL_ZOO.md),
+  for example, `configs/coco_lvis/swin/dynamite_swin_tiny_bs32_ep50.yaml`.
+2. We provide `demo.py` that is able to demo builtin configs. Run it with:
+```
+python demo.py --config-file configs/coco_lvis/swin/dynamite_swin_tiny_bs32_ep50.yaml \
+  --model-weights /path/to/checkpoint_file
+```
+The configs are made for training, therefore we need to specify 'model-weights' to a model from model zoo for evaluation.
+This command will open an OpenCV window where you can select any image and perform interactive segementation on it.
+All the buttons in the tool are self-explaintory.
+
 ## Installation
+
+See [installation instructions](assets/INSTALL.md).
+
+## Datasets
+See [Preparing Datasets for DynaMITe](assets/DATASETS.md).
 
 ## <a name="GettingStarted"></a>Getting Started
 
-## Datasets
+See [Training and Evaluation](assets/GETTING_STARTED.md).
 
 ## <a name="Models"></a>Model Checkpoints
+
+Trained models are available for download in the [DynaMITe Model Zoo](assets/MODEL_ZOO.md).
 
 ## Citing DynaMITe
 
