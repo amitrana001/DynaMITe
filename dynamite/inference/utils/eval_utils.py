@@ -206,6 +206,6 @@ def get_multi_inst_metrices(summary_stats):
                 
     table = PrettyTable()
     table.field_names = ["dataset", "NCI", "NFI", "NFO", "Avg_IOU", "#samples", "#clicks"]
-    table.add_row([dataset_name, NCI_all, NFI, NFO, Avg_IOU, total_num_instances, max_interactions])
+    table.add_row([dataset_name, round(NCI_all,2), NFI, NFO, Avg_IOU, total_num_instances, max_interactions])
 
     print(table)
