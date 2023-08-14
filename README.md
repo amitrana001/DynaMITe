@@ -27,6 +27,18 @@ The configs are made for training, therefore we need to specify 'model-weights' 
 This command will open an OpenCV window where you can select any image and perform interactive segementation on it.
 All the buttons in the tool are self-explaintory.
 
+<details>
+<summary><b>Interactive segmentation options</b></summary>
+<ul>
+    <li>Visualisation parameters</li>
+    <ul>
+        <li><i>Prediction threshold</i> slider adjusts the threshold for binarization of probability map for the current object.</li> 
+        <li><i>Alpha blending coefficient</i> slider adjusts the intensity of all predicted masks.</li>
+        <li><i>Visualisation click radius</i> slider adjusts the size of red and green dots depicting clicks.</li>
+    </ul>
+</ul>
+</details>
+
 ## Installation
 
 See [installation instructions](assets/INSTALL.md).

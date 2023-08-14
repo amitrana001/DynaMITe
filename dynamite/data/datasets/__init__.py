@@ -7,6 +7,6 @@ from . import (
     register_grabcut,
     register_davis_single_inst,
     register_coco_mval,
-    sbd_multi_insts,
-    sbd_single_inst,
+    register_sbd_multi_insts,
+    register_sbd_single_inst,
 )
