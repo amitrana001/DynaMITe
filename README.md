@@ -6,7 +6,7 @@
 
 [[`Paper`](https://arxiv.org/pdf/2304.06668.pdf)] [[`ArXiv`](https://arxiv.org/abs/2304.06668)] [[`Project-Page`](https://sabarim.github.io/dynamite/)] [[`BibTeX`](#citing-segment-anything)]
 <div align="center">
-  <img src="images/arch.png?raw=true" width="100%" height="100%"/>
+  <img src="https://github.com/amitrana001/DynaMITe/blob/final/assets/arch.png" width="100%" height="100%"/>
 </div><br/>
 
 DynaMITe consists of a backbone, a feature decoder, and an interactive Transformer. Point features at click
