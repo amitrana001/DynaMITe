@@ -59,7 +59,7 @@ You can find model weights and evaluation results in the tables below:
 <table>
     <thead align="center">
         <tr>
-            <th align="center", colspan="14">Model</th>
+            <th align="center", colspan="14">Multi-instance Interactive Segmentation</th>
         </tr>
         <tr>
             <th rowspan="2">Model</th>
@@ -181,9 +181,9 @@ You can find model weights and evaluation results in the tables below:
 
 <table>
     <thead align="center">
-        <!-- <tr>
-            <th colspan="14">Model</th>
-        </tr> -->
+        <tr>
+            <th align="center", colspan="13">Single-instance Interactive Segmentation</th>
+        </tr>
         <tr>
             <th rowspan="2">Model</th>
             <th colspan="2">GrabCut</th>
