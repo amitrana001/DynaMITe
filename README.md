@@ -55,8 +55,135 @@ We provide pretrained models with different backbones for interactive segmentati
 
 You can find model weights and evaluation results in the tables below:
 
+
 <table>
     <thead align="center">
+        <tr>
+            <th align="center", colspan="14">Model</th>
+        </tr>
+        <tr>
+            <th rowspan="2">Model</th>
+            <th rowspan="2">Strategy</th>
+            <th colspan="4">COCO</th>
+            <th colspan="4">SBD</th>    
+            <th colspan="4">DAVIS</th>
+        </tr>
+        <tr>
+            <td>NCI<br>85%</td>
+            <td>NFO<br>85%</td>
+            <td>NFI<br>85%</td>
+            <td>mIoU<br>85%</td>
+            <td>NCI<br>85%</td>
+            <td>NFO<br>85%</td>
+            <td>NFI<br>85%</td>
+            <td>mIoU<br>85%</td>
+            <td>NCI<br>85%</td>
+            <td>NFO<br>85%</td>
+            <td>NFI<br>85%</td>
+            <td>mIoU<br>85%</td>
+        </tr>
+    </thead>
+    <tbody align="center">
+        <tr>
+            <td align="left", rowspan="3"><a href="https://drive.google.com/file/d/1DCDiPv9Cr3nlKoUyxzkwK6pPnalVbfjn/view?usp=drive_link">Segformer-B0</a></td>
+            <td>best</td>
+            <td>6.13</td>
+            <td>15219</td>
+            <td>2485</td>
+            <td>81.3</td>
+            <td>2.83</td>
+            <td>655</td>
+            <td>342</td>
+            <td>90.2</td>
+            <td>3.29</td>
+            <td>546</td>
+            <td>364</td>
+            <td>87.5</td>
+        </tr>
+        <tr>
+            <td>random</td>
+            <td>6.04</td>
+            <td>12986</td>
+            <td>2431</td>
+            <td>84.9</td>
+            <td>2.76</td>
+            <td>528</td>
+            <td>313</td>
+            <td>90.6</td>
+            <td>3.27</td>
+            <td>549</td>
+            <td>356</td>
+            <td>87.9</td>
+        </tr>
+         <tr>
+            <td>worst</td>
+            <td>6.02</td>
+            <td>19758</td>
+            <td>2414</td>
+            <td>83.0</td>
+            <td>2.75</td>
+            <td>842</td>
+            <td>315</td>
+            <td>90.3</td>
+            <td>3.25</td>
+            <td>707</td>
+            <td>354</td>
+            <td>87.1</td>
+        </tr>
+        <tr>
+            <td align="left", rowspan="3"><a href="https://drive.google.com/file/d/1RllYat-UWD9oQ4HN6pmouT3vtVf9It4x/view?usp=drive_link">Swin-Large</a></td>
+            <td>best</td>
+            <td>5.80</td>
+            <td>13876</td>
+            <td>2305</td>
+            <td>82.4</td>
+            <td>2.47</td>
+            <td>497</td>
+            <td>266</td>
+            <td>90.7</td>
+            <td>3.06</td>
+            <td>483</td>
+            <td>330</td>
+            <td>88.4</td>
+        </tr>
+        <tr>
+            <td>random</td>
+            <td>5.70</td>
+            <td><ins>11958</ins></td>
+            <td><ins>2242</ins></td>
+            <td><ins>85.3</ins></td>
+            <td>2.42</td>
+            <td><ins>428</ins></td>
+            <td><ins>249</ins></td>
+            <td><ins>91.0</ins></td>
+            <td>3.03</td>
+            <td><ins>479</ins></td>
+            <td><ins>320</ins></td>
+            <td><ins>88.8</ins></td>
+        </tr>
+        <tr>
+            <td>worst</td>
+            <td><ins>5.66</ins></td>
+            <td>18133</td>
+            <td>2242</td>
+            <td>83.7</td>
+            <td><ins>2.41</ins></td>
+            <td>671</td>
+            <td>251</td>
+            <td>90.8</td>
+            <td><ins>2.99</ins></td>
+            <td>620</td>
+            <td>314</td>
+            <td>88.1</td>
+        </tr>
+    </tbody>
+</table>
+
+<table>
+    <thead align="center">
+        <!-- <tr>
+            <th colspan="14">Model</th>
+        </tr> -->
         <tr>
             <th rowspan="2">Model</th>
             <th colspan="2">GrabCut</th>
@@ -159,6 +286,7 @@ You can find model weights and evaluation results in the tables below:
         </tr>
     </tbody>
 </table>
+
 
 ## Citing DynaMITe
 
