@@ -7,12 +7,12 @@ from PIL import Image
 # import matplotlib as mpl
 # import matplotlib.colors as mplc
 import colorsys
-from interactive_demo_tool.canvas import CanvasImage
-from interactive_demo_tool.controller import InteractiveController
-from interactive_demo_tool.wrappers import BoundedNumericalEntry, FocusHorizontalScale, FocusCheckButton, \
+from interactive_demo.canvas import CanvasImage
+from interactive_demo.controller import InteractiveController
+from interactive_demo.wrappers import BoundedNumericalEntry, FocusHorizontalScale, FocusCheckButton, \
     FocusButton, FocusLabelFrame
 from detectron2.utils.colormap import colormap
-from dynamite.utils.vis import color_map
+from dynamite.utils.misc import color_map
 
 class InteractiveDemoApp(ttk.Frame):
     def __init__(self, master, args, cfg, model):

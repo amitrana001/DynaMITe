@@ -2,7 +2,7 @@ import torch
 import numpy as np
 from tkinter import messagebox
 import cv2
-from interactive_demo_tool import clicker
+from interactive_demo import clicker
 from detectron2.data import transforms as T
 import copy
 from dynamite.utils.misc import color_map
