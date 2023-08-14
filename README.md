@@ -38,17 +38,6 @@ This command will open an OpenCV window where you can select any image and perfo
 </ul>
 </details>
 
-## Installation
-
-See [installation instructions](assets/INSTALL.md).
-
-## Datasets
-See [Preparing Datasets for DynaMITe](assets/DATASETS.md).
-
-## <a name="GettingStarted"></a>Getting Started
-
-See [Training and Evaluation](assets/GETTING_STARTED.md).
-
 ## <a name="Models"></a>Model Checkpoints
 
 We provide pretrained models with different backbones for interactive segmentation.
@@ -286,6 +275,18 @@ You can find model weights and evaluation results in the tables below:
         </tr>
     </tbody>
 </table>
+
+
+## Installation
+
+See [installation instructions](assets/INSTALL.md).
+
+## Datasets
+See [Preparing Datasets for DynaMITe](assets/DATASETS.md).
+
+## <a name="GettingStarted"></a>Getting Started
+
+See [Training and Evaluation](assets/GETTING_STARTED.md).
 
 
 ## Citing DynaMITe
