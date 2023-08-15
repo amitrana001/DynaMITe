@@ -1,16 +1,11 @@
-from einops import rearrange
+
 from torch import Tensor
 from typing import Tuple, Dict, Any
 import copy
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from dynamite.data.points.annotation_generator import create_circular_mask
-from detectron2.projects.point_rend.point_features import (
-    get_uncertain_point_coords_with_randomness,
-    point_sample,
-)
+from detectron2.projects.point_rend.point_features import point_sample
 
 class AvgClicksPoolingInitializer(nn.Module):
 

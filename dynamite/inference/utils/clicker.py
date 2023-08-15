@@ -10,12 +10,10 @@ class Clicker:
 
     def __init__(self, inputs, sampling_strategy =1, click_radius = 5):
         
-        # self.model = model
         self.inputs = inputs
         
         self.click_radius = click_radius
-        #TO DO
-        # self.normalize_time= normalize_time
+
         self.max_timestamps = None
         
         # For sampling next click
@@ -43,8 +41,6 @@ class Clicker:
         self.click_counts += self.num_instances
 
         self.click_sequence = list(range(self.click_counts))
-        # self.num_clicks_per_object = [[1]*self.num_instances]
-        # self.num_insts = [self.num_instances]
 
         if 'num_clicks_per_object' in self.inputs[0]:
             for x in self.inputs:

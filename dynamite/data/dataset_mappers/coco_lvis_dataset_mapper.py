@@ -1,5 +1,4 @@
-# Copyright (c) Facebook, Inc. and its affiliates.
-# Modified by Bowen Cheng from https://github.com/facebookresearch/detr/blob/master/d2/detr/dataset_mapper.py
+# Modified by Amit Rana from https://github.com/facebookresearch/detr/blob/master/d2/detr/dataset_mapper.py
 import copy
 import logging
 import pickle
@@ -17,22 +16,15 @@ from detectron2.data import detection_utils as utils
 from detectron2.data import transforms as T
 from detectron2.data.transforms import TransformGen
 from detectron2.structures import BitMasks, Instances
-from detectron2.structures.masks import PolygonMasks
+from dynamite.data.dataset_mappers.utils import get_clicks_coords, build_transform_gen
 
-from pycocotools import mask as coco_mask
-from dynamite.data.dataset_mappers.utils.click_utils import get_clicks_coords
-from dynamite.data.dataset_mappers.utils.datamapper_utils import visualization, filter_instances, build_transform_gen
-
-# from mask2former.data.points.annotation_generator import gen_multi_points_per_mask, generate_point_to_blob_masks
-
-from dynamite.data.points.annotation_generator import create_circular_mask
 __all__ = ["COCOLVISDatasetMapper"]
 
 
 class COCOLVISDatasetMapper:
     """
     A callable which takes a dataset dict in Detectron2 Dataset format,
-    and map it into a format used by MaskFormer.
+    and map it into a format used by DynaMITe.
 
     This dataset mapper applies the same transformation as DETR for COCO panoptic segmentation.
 
@@ -42,6 +34,8 @@ class COCOLVISDatasetMapper:
     2. Applies geometric transforms to the image and annotation
     3. Find and applies suitable cropping to the image and annotation
     4. Prepare image and annotation to Tensors
+    5. Select atmost 30 random masks from the annotations
+    5. Prepare a list of foreground and background clicks for the objects and the background.
     """
 
     @configurable
@@ -51,19 +45,18 @@ class COCOLVISDatasetMapper:
         *,
         tfm_gens,
         image_format,
-        # unique_timestamp,
-        # use_point_features,
         min_area,
-        # random_bg_queries=False,
         stuff_prob=0.15,
     ):
         """
-        NOTE: this interface is experimental.
+
         Args:
             is_train: for training or inference
             augmentations: a list of augmentations or deterministic transforms to apply
             tfm_gens: data augmentation
-            image_format: an image format supported by :func:`detection_utils.read_image`.
+            image_format: an image format supported by :func:`detection_utils.read_image
+            min_ares: minimum mask area for an object/instance
+            stuff_prob: probability to sample stuff category objects
         """
         self.tfm_gens = tfm_gens
         logging.getLogger(__name__).info(
@@ -73,9 +66,6 @@ class COCOLVISDatasetMapper:
         self.img_format = image_format
         self.is_train = is_train
         self.min_area = min_area
-        # self.random_bg_queries = random_bg_queries
-        # self.unique_timestamp = unique_timestamp
-        # self.use_point_features = use_point_features
         self.stuff_prob = stuff_prob
     
     @classmethod
@@ -87,9 +77,6 @@ class COCOLVISDatasetMapper:
             "is_train": is_train,
             "tfm_gens": tfm_gens,
             "image_format": cfg.INPUT.FORMAT,
-            # "random_bg_queries": cfg.ITERATIVE.TRAIN.RANDOM_BG_QUERIES,
-            # "unique_timestamp": cfg.ITERATIVE.TRAIN.UNIQUE_TIMESTAMP,
-            # "use_point_features": cfg.ITERATIVE.TRAIN.USE_POINT_FEATURES,
             "stuff_prob": cfg.ITERATIVE.TRAIN.STUFF_PROB,
             "min_area": cfg.INPUT.MIN_AREA_FOR_MASK
         }
@@ -104,7 +91,6 @@ class COCOLVISDatasetMapper:
             dict: a format that builtin models in detectron2 accept
         """
         dataset_dict = copy.deepcopy(dataset_dict)  # it will be modified by code below
-        # save_vis(dataset_dict)
         image = utils.read_image(dataset_dict["file_name"], format=self.img_format)
         utils.check_image_size(dataset_dict, image)
 
@@ -125,7 +111,6 @@ class COCOLVISDatasetMapper:
         dataset_dict["image"] = torch.as_tensor(np.ascontiguousarray(image.transpose(2, 0, 1)))
         dataset_dict["padding_mask"] = torch.as_tensor(np.ascontiguousarray(padding_mask))
 
-        # stuff_prob = 0
         if "annotations" in dataset_dict:
 
             # USER: Implement additional transformations if you have other types of data
@@ -175,7 +160,6 @@ class COCOLVISDatasetMapper:
                 random_indices = random.sample(range(gt_masks.shape[0]),num_masks)
                 gt_masks = gt_masks[random_indices]
 
-                # mask_areas = torch.sum(instances.gt_masks.tensor, (1,2))
                 mask_areas = torch.sum(gt_masks, (1,2))
                 gt_masks =  gt_masks[sorted(range(len(mask_areas)),key=mask_areas.__getitem__,reverse=True)]
 

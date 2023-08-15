@@ -1,4 +1,5 @@
-# Copyright (c) Facebook, Inc. and its affiliates.
+#Modified by Amit Rana from https://github.com/facebookresearch/Mask2Former/blob/main/mask2former/maskformer_model.py
+
 from itertools import accumulate
 from typing import Tuple
 
@@ -47,6 +48,7 @@ class DynamiteModel(nn.Module):
                 specific integer. We can use this to override such requirement.
             pixel_mean, pixel_std: list or tuple with #channels element, representing
                 the per-channel mean and std to be used to normalize the input image
+            interactive_evaluation: bool to indicate if it's just one time inference or iterative evaluation
         """
         super().__init__()
         self.backbone = backbone
@@ -121,9 +123,13 @@ class DynamiteModel(nn.Module):
                 For now, each item in the list is a dict that contains:
                    * "image": Tensor, image in (C, H, W) format.
                    * "instances": per-region ground truth
+                   * "fg_click_coords": list of per-instance click coordinates
+                   * "bg_click_coords": list of background coordinates
+                   * "num_clicks_per_object": number of clicks sampled per instance
                    * Other information that's included in the original dicts, such as:
                      "height", "width" (int): the output resolution of the model (may be different
                      from input resolution), used in inference.
+            
         Returns:
             list[dict]:
                 each dict has the results for one image. The dict contains the following keys:

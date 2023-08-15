@@ -1,10 +1,10 @@
-# Copyright (c) Facebook, Inc. and its affiliates.
 # ------------------------------------------------------------------------------
 # Copyright (c) Microsoft
 # Licensed under the MIT License.
 # Written by Bin Xiao (leoxiaobin@gmail.com)
 # Modified by Bowen Cheng (bcheng9@illinois.edu)
-# Adapted from https://github.com/HRNet/Higher-HRNet-Human-Pose-Estimation/blob/master/lib/models/pose_higher_hrnet.py  # noqa
+# ------------------------------------------------------------------------------
+# Modified by Amit Rana from https://github.com/facebookresearch/detectron2/blob/main/projects/DensePose/densepose/modeling/hrnet.py  # noqa
 # ------------------------------------------------------------------------------
 
 from __future__ import absolute_import, division, print_function

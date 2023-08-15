@@ -12,12 +12,6 @@ from collections import OrderedDict
 from detectron2.modeling import SEM_SEG_HEADS_REGISTRY
 from detectron2.config import configurable
 
-#from mmseg.ops import resize
-#from ..builder import HEADS
-#from .decode_head import BaseDecodeHead
-#from mmseg.models.utils import *
-# import attr
-
 from IPython import embed
 
 class MLP(nn.Module):

@@ -1,21 +1,11 @@
-# Copyright (c) Facebook, Inc. and its affiliates.
-import logging
-from copy import deepcopy
-from typing import Callable, Dict, List, Optional, Tuple, Union
+#Modified by Amit Rana from https://github.com/facebookresearch/Mask2Former/blob/main/mask2former/modeling/meta_arch/mask_former_head.py
 
-import fvcore.nn.weight_init as weight_init
+from typing import Dict
 from torch import nn
-from torch.nn import functional as F
-import torch
-from detectron2.modeling.postprocessing import sem_seg_postprocess
-
 from detectron2.config import configurable
-from detectron2.layers import Conv2d, ShapeSpec, get_norm
+from detectron2.layers import ShapeSpec
 from detectron2.modeling import SEM_SEG_HEADS_REGISTRY
-from detectron2.utils.memory import retry_if_cuda_oom
-from detectron2.structures import Boxes, ImageList, Instances, BitMasks
 
-# from ..interactive_transformer import build_transformer_decoder
 from ..pixel_decoder.fpn import build_pixel_decoder
 from ..interactive_transformer.utils import build_interactive_transformer
 
@@ -58,10 +48,8 @@ class DynamiteHead(nn.Module):
     @classmethod
     def from_config(cls, cfg, input_shape: Dict[str, ShapeSpec]):
         # figure out in_channels to transformer predictor
-        if cfg.MODEL.MASK_FORMER.TRANSFORMER_IN_FEATURE == "multi_scale_pixel_decoder":  # for maskformer2
-            # transformer_predictor_in_channels = cfg.MODEL.SEM_SEG_HEAD.CONVS_DIM
+        if cfg.MODEL.MASK_FORMER.TRANSFORMER_IN_FEATURE == "multi_scale_pixel_decoder":  
             interactive_transformer_in_channels = cfg.MODEL.SEM_SEG_HEAD.CONVS_DIM
-
 
         return {
             "input_shape": {
@@ -73,10 +61,6 @@ class DynamiteHead(nn.Module):
                 cfg,
                 interactive_transformer_in_channels,
             ),
-            # "transformer_predictor": build_transformer_decoder(
-            #     cfg,
-            #     transformer_predictor_in_channels,
-            # ),
         }
 
     def forward(self, data, images, features, num_instances, mask_features=None,

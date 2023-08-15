@@ -213,8 +213,8 @@ You can find model weights and evaluation results in the tables below:
             <td>6.56</td>
             <td>4.10</td>
             <td>5.45</td>
-            <td>--</td>
-            <td>--</td>
+            <td>2.13</td>
+            <td>2.51</td>
             <td>2.36</td>
             <td>3.20</td>
         </tr>
@@ -228,8 +228,8 @@ You can find model weights and evaluation results in the tables below:
             <td>6.35</td>
             <td>3.83</td>
             <td>5.20</td>
-            <td>--</td>
-            <td>--</td>
+            <td>2.07</td>
+            <td>2.43</td>
             <td>2.35</td>
             <td>3.14</td>
         </tr>
@@ -243,8 +243,8 @@ You can find model weights and evaluation results in the tables below:
             <td>6.48</td>
             <td>3.85</td>
             <td>5.08</td>
-            <td>--</td>
-            <td>--</td>
+            <td>2.04</td>
+            <td>2.40</td>
             <td>2.47</td>
             <td>3.28</td>
         </tr>
@@ -258,8 +258,8 @@ You can find model weights and evaluation results in the tables below:
             <td>6.32</td>
             <td>3.87</td>
             <td>5.23</td>
-            <td>--</td>
-            <td>--</td>
+            <td>1.94</td>
+            <td>2.27</td>
             <td>2.24</td>
             <td>3.14</td>
         </tr>
@@ -273,8 +273,8 @@ You can find model weights and evaluation results in the tables below:
             <td><ins>5.64</ins></td>
             <td><ins>3.80</ins></td>
             <td><ins>5.09</ins></td>
-            <td>--</td>
-            <td>--</td>
+            <td><ins>1.83</ins></td>
+            <td><ins>2.12</ins></td>
             <td><ins>2.19</ins></td>
             <td><ins>2.88</ins></td>
         </tr>
@@ -293,6 +293,10 @@ See [Preparing Datasets for DynaMITe](assets/DATASETS.md).
 
 See [Training and Evaluation](assets/GETTING_STARTED.md).
 
+## Acknowledgement
+The main codebase is built on top of [detectron2](https://github.com/facebookresearch/detectron2) framework and is heavily inspired from [Mask2Fromer](https://github.com/facebookresearch/Mask2Former).
+
+The Interactive segementation tool is modified from [RITM]( https://github.com/saic-vul/ritm_interactive_segmentation).
 
 ## Citing DynaMITe
 

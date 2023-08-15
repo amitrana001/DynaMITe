@@ -1,5 +1,5 @@
-# Copyright (c) Facebook, Inc. and its affiliates.
-# Modified by Bowen Cheng from: https://github.com/facebookresearch/detr/blob/master/models/detr.py
+# Adapted by Amit Rana from: https://github.com/facebookresearch/Mask2Former/blob/main/mask2former/modeling/transformer_decoder/mask2former_transformer_decoder.py
+
 import logging
 import os
 import time as timer

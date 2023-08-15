@@ -1,4 +1,4 @@
-# Copyright (c) Facebook, Inc. and its affiliates.
+# Taken from https://github.com/facebookresearch/Mask2Former/blob/main/mask2former/modeling/pixel_decoder/fpn.py
 import logging
 import numpy as np
 from typing import Callable, Dict, List, Optional, Tuple, Union

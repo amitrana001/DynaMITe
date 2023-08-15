@@ -1,4 +1,4 @@
-import os
+# Taken from https://github.com/SamsungLabs/ritm_interactive_segmentation/tree/master/isegm/utils
 import numpy as np
 
 def bbox_from_mask_np(mask, order='Y1Y2X1X2', return_none_if_invalid=False):
