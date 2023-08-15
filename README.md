@@ -48,7 +48,7 @@ This command will open an OpenCV window where you can select any image and perfo
 
 We provide pretrained models with different backbones for interactive segmentation.
 
-You can find model weights and evaluation results in the tables below:
+You can find the model weights and evaluation results in the tables below. Although we provide hyperlinks against the respective table entries, all models are trained in the multi-instance setting, and are applicable for both single and multi-instance settings.
 
 <table>
     <thead align="center">
