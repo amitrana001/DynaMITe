@@ -294,7 +294,7 @@ See [Preparing Datasets for DynaMITe](assets/DATASETS.md).
 See [Training and Evaluation](assets/GETTING_STARTED.md).
 
 ## Acknowledgement
-The main codebase is built on top of [detectron2](https://github.com/facebookresearch/detectron2) framework and is heavily inspired from [Mask2Fromer](https://github.com/facebookresearch/Mask2Former).
+The main codebase is built on top of [detectron2](https://github.com/facebookresearch/detectron2) framework and is inspired from [Mask2Fromer](https://github.com/facebookresearch/Mask2Former).
 
 The Interactive segementation tool is modified from [RITM]( https://github.com/saic-vul/ritm_interactive_segmentation).
 
