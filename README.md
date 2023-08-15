@@ -300,11 +300,20 @@ The Interactive segementation tool is modified from [RITM]( https://github.com/s
 
 ## Citing DynaMITe
 
+If you use our codebase then please cite the papers mentioned below.
+
 ```BibTeX
 @inproceedings{RanaMahadevan23Arxiv,
       title={DynaMITe: Dynamic Query Bootstrapping for Multi-object Interactive Segmentation Transformer},
       author={Rana, Amit and Mahadevan, Sabarinath and Hermans, Alexander and Leibe, Bastian},
       booktitle={ICCV},
+      year={2023}
+}
+
+@inproceedings{RanaMahadevan23cvprw,
+      title={Clicks as Queries: Interactive Transformer for Multi-instance Segmentation},
+      author={Rana, Amit and Mahadevan, Sabarinath and Alexander Hermans and Leibe, Bastian},
+      booktitle={CVPRW},
       year={2023}
 }
 ```
