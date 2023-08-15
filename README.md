@@ -29,9 +29,15 @@ This command will open an OpenCV window where you can select any image and perfo
 <details>
 <summary><b>Interactive segmentation options</b></summary>
 <ul>
+    <li>Clicks management</li>
+    <ul>
+        <li><i>add instance </i> button to add a new instance; a button for the new instance would be created with the same color as the color of the instance mask. </li> 
+        <li><i>bg clicks</i> button to add background clicks.</li>
+        <li><i>reset clicks</i> button to remove all clicks and instances.</li>
+    </ul>
     <li>Visualisation parameters</li>
     <ul>
-        <li><i>Prediction threshold</i> slider adjusts the threshold for binarization of probability map for the current object.</li> 
+        <li><i>show masks only </i> button to visualize only the masks without point clicks. </li> 
         <li><i>Alpha blending coefficient</i> slider adjusts the intensity of all predicted masks.</li>
         <li><i>Visualisation click radius</i> slider adjusts the size of red and green dots depicting clicks.</li>
     </ul>
@@ -43,7 +49,6 @@ This command will open an OpenCV window where you can select any image and perfo
 We provide pretrained models with different backbones for interactive segmentation.
 
 You can find model weights and evaluation results in the tables below:
-
 
 <table>
     <thead align="center">
