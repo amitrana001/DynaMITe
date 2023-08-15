@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-""" Adopted from https://github.com/foobar167/junkyard/blob/master/manual_image_annotation1/polygon/gui_canvas.py """
+""" Adopted from https://github.com/SamsungLabs/ritm_interactive_segmentation/blob/master/interactive_demo/canvas.py """
 import os
 import sys
 import time

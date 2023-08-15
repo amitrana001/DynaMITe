@@ -1,6 +1,6 @@
+# Adapted from: https://github.com/SamsungLabs/ritm_interactive_segmentation/blob/master/interactive_demo/wrappers.py
 import tkinter as tk
 from tkinter import messagebox, ttk
-
 
 class BoundedNumericalEntry(tk.Entry):
     def __init__(self, master=None, min_value=None, max_value=None, variable=None,

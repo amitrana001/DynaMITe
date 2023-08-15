@@ -55,16 +55,20 @@ class DynamiteInteractiveTransformer(nn.Module):
         NOTE: this interface is experimental.
         Args:
             in_channels: channels of the input features
+            use_decoder: whether to use decoder
+            dec_layers: number of decoder layers
+            dec_scale_factor: scaling factor for mask_features before using in decoder
+            use_static_bg_queries: whether to use learned background queries
+            num_static_bg_queries: number of learned background queries
             hidden_dim: Transformer feature dimension
-            num_queries: number of queries
             nheads: number of heads
             dim_feedforward: feature dimension in feedforward network
             enc_layers: number of Transformer encoder layers
-            dec_layers: number of Transformer decoder layers
             pre_norm: whether to use pre-LayerNorm or not
             mask_dim: mask feature dimension
             enforce_input_project: add input project 1x1 conv even if input
                 channels and hidden dim is identical
+            positional_embeddings: type of positonal embeddings for clicks coordinates 
         """
         super().__init__()
 
@@ -131,7 +135,6 @@ class DynamiteInteractiveTransformer(nn.Module):
         nn.init.normal_(self.query_embed)
         if self.use_static_bg_queries:
             nn.init.normal_(self.static_bg_pe)
-            # # # nn.init.kaiming_uniform_(self.static_bg_query, a=1)
             nn.init.xavier_uniform_(self.static_bg_query)
 
     @classmethod
@@ -187,13 +190,10 @@ class DynamiteInteractiveTransformer(nn.Module):
             src[-1] = src[-1].permute(2, 0, 1)
 
         if self.training:
-            # if self.accumulate_loss:
             prev_output = None
             num_iters = random.randint(0,self.max_num_interactions)
             
             if max_timestamp is None:
-                # max_timestamp = None
-                # if self.unique_timestamp:
                 max_timestamp = []
                 bs = len(num_clicks_per_object)
                 for j in range(bs):
@@ -256,7 +256,6 @@ class DynamiteInteractiveTransformer(nn.Module):
                 bg_queries = repeat(self.bg_query, "C -> 1 L C", L=max_queries_batch-desc.shape[1])
             else:
                 bg_queries = repeat(self.bg_query, "C -> 1 L C", L=max_queries_batch+1-desc.shape[1])
-            # bg_queries = repeat(self.bg_query, "C -> 1 L C", L=self.num_static_bg_queries)
             descriptors[i] = torch.cat((descriptors[i], bg_queries), dim=1)
         output = torch.cat(descriptors, dim=0)
         
@@ -279,8 +278,7 @@ class DynamiteInteractiveTransformer(nn.Module):
         # NxQxC -> QxNxC
         output = self.queries_nonlinear_projection(output).permute(1,0,2)
         # query positional embedding QxNxC
-        # query_embed = repeat(self.query_embed, "C -> Q N C", N=bs, Q=num_scrbs)
-
+        
         # query_embed = None
         predictions_mask = []
        

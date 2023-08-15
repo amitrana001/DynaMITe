@@ -1,17 +1,15 @@
+#Adapted from: https://github.com/SamsungLabs/ritm_interactive_segmentation/blob/master/interactive_demo/app.py
 import tkinter as tk
 from tkinter import messagebox, filedialog, ttk
 
 import cv2
 import numpy as np
 from PIL import Image
-# import matplotlib as mpl
-# import matplotlib.colors as mplc
 import colorsys
 from interactive_demo.canvas import CanvasImage
 from interactive_demo.controller import InteractiveController
 from interactive_demo.wrappers import BoundedNumericalEntry, FocusHorizontalScale, FocusCheckButton, \
     FocusButton, FocusLabelFrame
-from detectron2.utils.colormap import colormap
 from dynamite.utils.misc import color_map
 
 class InteractiveDemoApp(ttk.Frame):
@@ -89,25 +87,20 @@ class InteractiveDemoApp(ttk.Frame):
 
         self.clicks_options_frame = FocusLabelFrame(master, text="Clicks management")
         self.clicks_options_frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=3)
-        # self.finish_object_button = \
-        #     FocusButton(self.clicks_options_frame, text='Finish\nobject', bg='#b6d7a8', fg='black', width=10, height=2,
-        #                 state=tk.DISABLED, command=self.controller.finish_object)
+        
         self.ADD = FocusButton(self.clicks_options_frame, text="add instance", fg="green",
                     command=self._add_button)
        
-        # self.ADD.pack(side=tk.LEFT, fill=tk.X, padx=10, pady=3)
         self.ADD.grid(row=0, column=1, padx=10, pady=3, sticky='w')
 
         self.REMOVE = FocusButton(self.clicks_options_frame, text="show masks only", fg="green",
                     command=self._show_masks_only)
        
-        # self.ADD.pack(side=tk.LEFT, fill=tk.X, padx=10, pady=3)
         self.REMOVE.grid(row=0, column=2, padx=10, pady=3, sticky='w')
 
         self.BG_CLICK = FocusButton(self.clicks_options_frame, text="bg clicks", fg="green",
                     command=self.bg_click)
        
-        # self.ADD.pack(side=tk.LEFT, fill=tk.X, padx=10, pady=3)
         self.BG_CLICK.grid(row=0, column=3, padx=10, pady=3, sticky='w')
         self.orig_bg_color = self.BG_CLICK.cget("background")
 
@@ -117,7 +110,6 @@ class InteractiveDemoApp(ttk.Frame):
         self.reset_clicks = FocusButton(self.resetting_clicks_frame, text="reset clicks", fg="green",
                     command=self._reset_clicks)
        
-        # self.ADD.pack(side=tk.LEFT, fill=tk.X, padx=10, pady=3)
         self.reset_clicks.grid(row=0, column=0, padx=10, pady=3, sticky='w')
 
 
@@ -360,29 +352,14 @@ def get_color_from_map(index):
     return color_c
 
 def change_color_brightness(color, brightness_factor):
-        """
-        Depending on the brightness_factor, gives a lighter or darker color i.e. a color with
-        less or more saturation than the original color.
+       
+    r, g, b = [x/255.0 for x in color]
+    polygon_color =  colorsys.rgb_to_hls(r,g,b)
+    modified_lightness = polygon_color[1] + (brightness_factor * polygon_color[1])
+    modified_lightness = 0.0 if modified_lightness < 0.0 else modified_lightness
+    modified_lightness = 1.0 if modified_lightness > 1.0 else modified_lightness
+    modified_color = colorsys.hls_to_rgb(polygon_color[0], modified_lightness, polygon_color[2])
 
-        Args:
-            color: color of the polygon. Refer to `matplotlib.colors` for a full list of
-                formats that are accepted.
-            brightness_factor (float): a value in [-1.0, 1.0] range. A lightness factor of
-                0 will correspond to no change, a factor in [-1.0, 0) range will result in
-                a darker color and a factor in (0, 1.0] range will result in a lighter color.
-
-        Returns:
-            modified_color (tuple[double]): a tuple containing the RGB values of the
-                modified color. Each value in the tuple is in the [0.0, 1.0] range.
-        """
-        
-        r, g, b = [x/255.0 for x in color]
-        polygon_color =  colorsys.rgb_to_hls(r,g,b)
-        modified_lightness = polygon_color[1] + (brightness_factor * polygon_color[1])
-        modified_lightness = 0.0 if modified_lightness < 0.0 else modified_lightness
-        modified_lightness = 1.0 if modified_lightness > 1.0 else modified_lightness
-        modified_color = colorsys.hls_to_rgb(polygon_color[0], modified_lightness, polygon_color[2])
-
-        return np.asarray([c*255 for c in modified_color], dtype =np.uint8)
+    return np.asarray([c*255 for c in modified_color], dtype =np.uint8)
 
 

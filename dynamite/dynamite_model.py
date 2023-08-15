@@ -129,10 +129,22 @@ class DynamiteModel(nn.Module):
                    * Other information that's included in the original dicts, such as:
                      "height", "width" (int): the output resolution of the model (may be different
                      from input resolution), used in inference.
-            
+            features, mask_features, multi_scale_features:
+                these are computed once per image and passed as an argument to avoid recomputation
+                during iterative evaluation/inference
+            fg_coords: a batched list where each item is
+                * list of list of clicks coordinates for each object
+            bg_coords: a batched list where each item is
+                * list of background coordinates
+            num_clicks_per_object: a batched list where each item  is
+                * list of number of clicks per object/instance
+            max_timestamp: a batched list where each item  is
+                * maximum number of clicks for that image
+            num_instances:  a batched list where each item  is
+                * number of instances per image
         Returns:
-            list[dict]:
-                each dict has the results for one image. The dict contains the following keys:
+            list[Instances]:
+                each Instances has the predicted masks for one image.
 
         """
         

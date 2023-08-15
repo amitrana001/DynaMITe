@@ -2,7 +2,7 @@ import torchvision
 import torch
 import numpy as np
 import cv2
-from dynamite.data.points.annotation_generator import create_circular_mask
+from dynamite.data.dataset_mappers.utils import create_circular_mask
 import os
 from dynamite.utils.misc import color_map
 

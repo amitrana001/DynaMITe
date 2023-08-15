@@ -4,10 +4,6 @@ import torch
 import random
 from functools import lru_cache
 import cv2
-import copy
-import logging
-from copy import deepcopy
-from dynamite.data.points.annotation_generator import create_circular_mask
 from pycocotools import mask as coco_mask
 from detectron2.data import detection_utils as utils
 from detectron2.data import transforms as T
@@ -15,14 +11,37 @@ from detectron2.data.transforms import TransformGen
 from detectron2.structures import BitMasks, Instances
 from detectron2.structures.masks import PolygonMasks
 
+def create_circular_mask(h, w, centers=None, radius=None):
+
+    assert centers is not None
+    assert radius is not None
+
+    mask=np.zeros((h,w), dtype=bool) 
+    for center in centers:
+
+        Y, X = np.ogrid[:h, :w]
+        dist_from_center = np.sqrt((X - center[1])**2 + (Y-center[0])**2)
+
+        mask = mask | (dist_from_center <= radius)
+    return mask.astype(np.uint8)
+
+def get_max_dt_point_mask(mask, max_num_pts=1):
+    mask = mask.astype(np.uint8)
+    # masks[masks == void_label] = 0
+
+    padded_mask = np.pad(mask, ((1, 1), (1, 1)), 'constant')
+    dt = cv2.distanceTransform(padded_mask.astype(np.uint8), cv2.DIST_L2, 0)[1:-1, 1:-1]
+    max_dist = np.max(dt)
+
+    coords_y, coords_x = np.where(dt == max_dist)
+
+    return [coords_y[0],coords_x[0]]
+
 def convert_coco_poly_to_mask(segmentations, height, width):
     masks = []
     for polygons in segmentations:
         rles = coco_mask.frPyObjects(polygons, height, width)
-        # area = coco_mask.area(rles)
-        # print(area)
-        # if area < min_area:
-        #     continue
+       
         mask = coco_mask.decode(rles)
         if len(mask.shape) < 3:
             mask = mask[..., None]
@@ -36,18 +55,16 @@ def convert_coco_poly_to_mask(segmentations, height, width):
     return masks
 
 def filter_instances(instances, min_area):
-    # num_instances = len(instances.gt_masks)
+    
     polygon_masks = PolygonMasks(instances.gt_masks.polygons)
     masks_area = polygon_masks.area()
-    # print(f"instances: {len(instances)}, masks: {len(masks_area)},{masks_area.shape}")
-    # num_instances = len(masks_area)
+    
     m = []
     for mask_area in masks_area:
         m.append(mask_area > min_area)
     m = torch.tensor(m).type(torch.bool)
-    # print(m)
-    return instances[m]
 
+    return instances[m]
 
 def build_transform_gen(cfg, is_train):
     """
@@ -112,10 +129,6 @@ def generate_probs(max_num_points, gamma):
 
 def get_clicks_coords(masks, max_num_points=6, first_click_center=True, all_masks=None, t= 0):
 
-    """
-    :param masks: numpy array of shape I x H x W
-    """
-    # assert all_masks is not None
     masks = np.asarray(masks).astype(np.uint8)
     all_masks = np.asarray(all_masks) #.astype(np.uint8)
     _pos_probs = generate_probs(max_num_points, gamma = 0.7)

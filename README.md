@@ -284,7 +284,7 @@ You can find the model weights and evaluation results in the tables below. Altho
 
 ## Installation
 
-See [installation instructions](assets/INSTALL.md).
+See [Installation Instructions](assets/INSTALL.md).
 
 ## Datasets
 See [Preparing Datasets for DynaMITe](assets/DATASETS.md).

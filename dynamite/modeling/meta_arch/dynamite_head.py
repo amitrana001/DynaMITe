@@ -39,7 +39,6 @@ class DynamiteHead(nn.Module):
         self.common_stride = 4
 
         self.pixel_decoder = pixel_decoder
-        # self.predictor = transformer_predictor
         self.interactive_transformer = interactive_transformer
 
         self.transformer_in_feature = transformer_in_feature

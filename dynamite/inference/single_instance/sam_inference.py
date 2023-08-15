@@ -18,13 +18,15 @@ color_map = colormap(rgb=True, maximum=1)
 
 def get_avg_noc(
     model, data_loader, cfg, iou_threshold = 0.90, dataset_name= None,
-    max_interactions = 20, sampling_strategy=1,save_stats_summary=False, vis_path = None
+    max_interactions = 20, sampling_strategy=1, vis_path = None
 ):
-    """
-    Run model on the data_loader and evaluate the metrics with evaluator.
-    Also benchmark the inference speed of `model.__call__` accurately.
+     """
+    Run model on the data_loader and return a dict, later used to calculate
+    all the metrics for single-instance inteactive segmentation such as NoC,
+    NFO, and Avg IoU.
     The model will be used in eval mode.
-    Args:
+
+    Arguments:
         model (callable): a callable which takes an object from
             `data_loader` and returns some outputs.
             If it's an nn.Module, it will be temporarily set to `eval` mode.
@@ -32,14 +34,26 @@ def get_avg_noc(
             wrap the given model and override its behavior of `.eval()` and `.train()`.
         data_loader: an iterable object with a length.
             The elements it generates will be the inputs to the model.
-        evaluator: the evaluator(s) to run. Use `None` if you only want to benchmark,
-            but don't want to do any evaluation.
+        iou_threshold: float
+            Desired IoU value for each object mask
         max_interactions: int
             Maxinum number of interactions per object
-        iou_threshold: float
-            IOU threshold bwteen gt_mask and pred_mask to stop interaction
+        sampling_strategy: int
+            Strategy to avaoid regions while sampling next clicks
+            0: new click sampling avoids all the previously sampled click locations
+            1: new click sampling avoids all locations upto radius 5 around all
+               the previously sampled click locations
+        vis_path: str
+            Path to save visualization of masks with clicks during evaluation
+
     Returns:
-        The return value of `evaluator.evaluate()`
+        Dict with following keys:
+            'total_num_instances': total number of instances in the dataset
+            'total_num_interactions': total number of interactions/clicks sampled 
+            'num_failed_objects': total number of failed objects
+            'total_iou': sum of the ious of each object
+            'dataset_iou_list': a dict with keys as image ids and values as
+             list of ious of all objects after final interaction
     """
     
     num_devices = get_world_size()
@@ -81,6 +95,9 @@ def get_avg_noc(
             clicker = Clicker(inputs, sampling_strategy)
             predictor = Predictor(clicker)
 
+            if vis_path:
+                clicker.save_visualization(vis_path, ious=[0], num_interactions=0)
+
             num_instances = clicker.num_instances
             total_num_instances+=num_instances
 
@@ -92,8 +109,10 @@ def get_avg_noc(
             pred_masks = predictor.get_prediction(clicker)
             clicker.set_pred_masks(pred_masks)
             ious = clicker.compute_iou_sam()
-            # ious = clicker.compute_iou()
-           
+
+            if vis_path:
+                clicker.save_visualization(vis_path, ious=ious, num_interactions=num_interactions)
+
             per_image_iou_list.append(ious[0])
             while (num_interactions<max_interactions):
                 
@@ -109,7 +128,9 @@ def get_avg_noc(
                 pred_masks = predictor.get_prediction(clicker)
                 clicker.set_pred_masks(pred_masks)
                 ious = clicker.compute_iou_sam()
-                # ious = clicker.compute_iou()
+                if vis_path:
+                    clicker.save_visualization(vis_path, ious=ious, num_interactions=num_interactions)
+                    
                 per_image_iou_list.append(ious[0])
                
             dataset_iou_list[f"{inputs[0]['image_id']}_{idx}"] = np.asarray(per_image_iou_list)

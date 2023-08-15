@@ -9,5 +9,4 @@ from .config import add_maskformer2_config, add_hrnet_config
 from .data.dataset_mappers.coco_lvis_dataset_mapper import COCOLVISDatasetMapper
 from .data.dataset_mappers.evaluation_dataset_mapper import EvaluationDatasetMapper
 
-from .test_time_augmentation import SemanticSegmentorWithTTA
 from .dynamite_model import DynamiteModel

@@ -66,7 +66,7 @@ DETECTRON2_DATASETS                    Dataset-Name
 ├── GrabCut                             "GrabCut"
 │   ├── boundary_GT
 │   └── data_GT
-├── COCO_MVal                           "COCO_Mval"
+├── COCO_MVal                           "coco_MVal"
 │   ├── gt
 │   └── img
 ├── davis                               "davis_single_inst"

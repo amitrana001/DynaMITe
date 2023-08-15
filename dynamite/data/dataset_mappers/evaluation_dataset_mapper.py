@@ -135,7 +135,6 @@ class EvaluationDatasetMapper:
             if not hasattr(instances, 'gt_masks'):
                 return None
             instances.gt_boxes = instances.gt_masks.get_bounding_boxes()
-            # boxes_area = instances.gt_boxes.area()
             # Need to filter empty instances first (due to augmentation)
             instances = utils.filter_empty_instances(instances)
             

@@ -11,7 +11,7 @@ import pickle
 from prettytable import PrettyTable
 from detectron2.utils.visualizer import Visualizer
 import torchvision.transforms.functional as F
-from dynamite.data.points.annotation_generator import create_circular_mask, get_max_dt_point_mask
+from dynamite.data.dataset_mappers.utils import create_circular_mask, get_max_dt_point_mask
 # from offline_summary import get_statistics
 
 def get_palette(num_cls):

@@ -96,7 +96,7 @@ def get_avg_noc(
             predictor = Predictor(model)
 
             if vis_path:
-                clicker.save_visualization(vis_path, ious=0, num_interactions=0)
+                clicker.save_visualization(vis_path, ious=[0], num_interactions=0)
 
             num_instances = clicker.num_instances
             total_num_instances+=num_instances

@@ -1,4 +1,3 @@
-# Copyright (c) Facebook, Inc. and its affiliates.
 # Modified by Bowen Cheng from https://github.com/facebookresearch/detr/blob/master/util/misc.py
 """
 Misc functions, including distributed helpers.
@@ -13,6 +12,7 @@ import torch.distributed as dist
 import torchvision
 from torch import Tensor
 import numpy as np
+
 def get_palette(num_cls):
     palette = np.zeros(3 * num_cls, dtype=np.int32)
 
@@ -163,7 +163,6 @@ def default_argument_parser(epilog=None):
         "See documentation of `DefaultTrainer.resume_or_load()` for what it means.",
     )
     parser.add_argument("--eval-only", action="store_true", help="perform evaluation only")
-    parser.add_argument("--save-summary", action="store_true", help="save statistics summary for evaluation")
     parser.add_argument("--eval-datasets", type=tuple_type, default="GrabCut", help="perform evaluation on given datsets")
     parser.add_argument("--eval-strategy", type=str, default="random", help="evaluation strategy")
     parser.add_argument("--iou-threshold",type=float, default=0.85,help="IoU threshold")

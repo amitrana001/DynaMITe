@@ -1,15 +1,9 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
-"""
-MaskFormer Training Script.
-
-This script is a simplified version of the training script in detectron2/tools.
-"""
+#Adapted by Amit Rana from: https://github.com/facebookresearch/Mask2Former/blob/main/train_net.py
 import csv
 
 import numpy as np
 
 try:
-    # ignore ShapelyDeprecationWarning from fvcore
     from shapely.errors import ShapelyDeprecationWarning
     import warnings
     warnings.filterwarnings('ignore', category=ShapelyDeprecationWarning)
@@ -19,9 +13,7 @@ except:
 import copy
 import itertools
 import logging
-import os
 
-from collections import OrderedDict
 from typing import Any, Dict, List, Set
 
 import torch
@@ -32,29 +24,20 @@ from detectron2.config import get_cfg
 from detectron2.data import build_detection_train_loader, build_detection_test_loader
 from detectron2.engine import (
     DefaultTrainer,
-    # default_argument_parser,
     default_setup,
     launch,
 )
 from dynamite.utils.misc import default_argument_parser
-# from dynamite.evaluation.single_instance_evaluation import get_avg_noc
 
 from detectron2.projects.deeplab import add_deeplab_config, build_lr_scheduler
 from detectron2.solver.build import maybe_add_gradient_clipping
 from detectron2.utils.logger import setup_logger
 
-from detectron2.evaluation import (
-    DatasetEvaluator,
-)
-
-# from mask2former.evaluation.iterative_evaluator import iterative_inference_on_dataset
-# MaskFormer
 from dynamite import (
     COCOLVISDatasetMapper, EvaluationDatasetMapper
 )
 
 from dynamite import (
-    SemanticSegmentorWithTTA,
     add_maskformer2_config,
     add_hrnet_config
 )
@@ -63,19 +46,8 @@ from dynamite.inference.utils.eval_utils import log_single_instance, log_multi_i
 
 class Trainer(DefaultTrainer):
     """
-    Extension of the Trainer class adapted to MaskFormer.
+    Extension of the Trainer class adapted to Mask2Former.
     """
-
-    @classmethod
-    def build_evaluator(cls, cfg, dataset_name, output_folder=None):
-        """
-        Create evaluator(s) for a given dataset.
-        This uses the special metadata "evaluator_type" associated with each
-        builtin dataset. For your own dataset, you can simply create an
-        evaluator manually in your script and do not have to worry about the
-        hacky if-else logic here.
-        """
-        return None
 
     @classmethod
     def build_test_loader(cls,cfg,dataset_name):
@@ -185,7 +157,7 @@ class Trainer(DefaultTrainer):
     def test(cls, cfg, model, evaluators=None):
         
         """
-        Method is called after every Evaluation Checkpoint iteration.
+        Method is called after every evaluation Checkpoint iteration.
         You can evaluate on any dataset and log the results/metrics 
         for debugging and performance measure puposes.
         """
@@ -197,16 +169,6 @@ class Trainer(DefaultTrainer):
         """
         Evaluate the given model. The given model is expected to already contain
         weights to evaluate.
-
-        Args:
-            cfg (CfgNode):
-            model (nn.Module):
-            evaluators (list[DatasetEvaluator] or None): if None, will call
-                :meth:`build_evaluator`. Otherwise, must have the same length as
-                ``cfg.DATASETS.TEST``.
-
-        Returns:
-            dict: a dict of result metrics
         """
         if not args:
             return 
@@ -216,7 +178,6 @@ class Trainer(DefaultTrainer):
         if args and args.eval_only:
             eval_datasets = args.eval_datasets
             vis_path = args.vis_path
-            save_stats_summary = args.save_summary
             eval_strategy = args.eval_strategy
             seed_id = args.seed_id
             iou_threshold = args.iou_threshold
@@ -298,10 +259,6 @@ def setup(args):
 
 def main(args):
     
-    import debugpy
-    debugpy.listen(5678)
-    print("Waiting for debugger")
-    debugpy.wait_for_client()
     cfg = setup(args)
     if args.eval_only:
         model = Trainer.build_model(cfg)

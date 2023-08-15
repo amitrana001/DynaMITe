@@ -9,8 +9,7 @@ Please see [Getting Started with Detectron2](https://github.com/facebookresearch
 
 We provide a script `train_net.py`, that is made to train all the configs provided in DynaMITe.
 
-To train a model with "train_net.py", first
-setup the corresponding datasets following
+To train a model with "train_net.py", first setup the COCO+LVIS dataset following
 [DATASETS.md](DATASETS.md),
 then run:
 ```
@@ -27,6 +26,7 @@ python train_net.py \
   --num-gpus 1 SOLVER.IMS_PER_BATCH SET_TO_SOME_REASONABLE_VALUE SOLVER.BASE_LR SET_TO_SOME_REASONABLE_VALUE
 ```
 
+Note: You can follow the [Mask2Former guidlines](https://github.com/facebookresearch/Mask2Former/blob/main/tools/README.md) to download and convert the pretrained models for backbones.
 
 ### Evaluation
 To evaluate a model's performance, use
@@ -53,7 +53,7 @@ For more options, see `python train_net.py -h`.
     <ul>
         <li><i>GrabCut</i></li>
         <li><i>Brekeley</i></li>
-        <li><i>COCO_Mval</i></li>
+        <li><i>coco_MVal</i></li>
         <li><i>davis_single_inst</i></li>
         <li><i>pascal_voc_single</i></li>
         <li><i>sbd_single_inst</i></li>

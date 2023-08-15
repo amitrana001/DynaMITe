@@ -1,16 +1,14 @@
+# Adapted from: https://github.com/SamsungLabs/ritm_interactive_segmentation/blob/master/interactive_demo/controller.py
 import torch
 import numpy as np
 from tkinter import messagebox
 import cv2
-from interactive_demo import clicker
 from detectron2.data import transforms as T
 import copy
 from dynamite.utils.misc import color_map
 
 class InteractiveController:
     def __init__(self, model, update_image_callback, cfg):
-        
-        self.clicker = clicker.Clicker()
 
         self.transforms = T.ResizeShortestEdge(
             [cfg.INPUT.MIN_SIZE_TEST, cfg.INPUT.MIN_SIZE_TEST], cfg.INPUT.MAX_SIZE_TEST
@@ -125,16 +123,7 @@ class InteractiveController:
         self.update_image_callback()
     
     def undo_click(self):
-        if not self.states:
-            return
-
-        prev_state = self.states.pop()
-        self.clicker.set_state(prev_state['clicker'])
-        self.predictor.set_states(prev_state['predictor'])
-        self.probs_history.pop()
-        if not self.probs_history:
-            self.reset_init_mask()
-        self.update_image_callback()
+        pass
 
     def reset_clicks(self):
         self.set_image(self.image)
