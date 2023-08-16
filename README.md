@@ -423,10 +423,14 @@ We train the Swin-Tiny model 3 times with different seeds during training and ob
     </tbody>
 </table>
 
-## Acknowledgement
-The main codebase is built on top of [detectron2](https://github.com/facebookresearch/detectron2) framework and is inspired from [Mask2Fromer](https://github.com/facebookresearch/Mask2Former).
+## License
 
-The Interactive segementation tool is modified from [RITM]( https://github.com/saic-vul/ritm_interactive_segmentation).
+Shield: [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+The majority of DynaMITe is licensed under a [MIT License](LICENSE).
+
+Some codebase is inspired from Mask2Former which is majorly licensed under [MIT license](https://github.com/facebookresearch/Mask2Former/blob/main/LICENSE) along with additional licenses mentioned in [Mask2Former](https://github.com/facebookresearch/Mask2Former/blob/main/README.md) and interactive demo tool is adapted from [RITM](https://github.com/SamsungLabs/ritm_interactive_segmentation/tree/master) which is also licensed under [MIT License](https://github.com/SamsungLabs/ritm_interactive_segmentation/blob/master/LICENSE).
+
 
 ## Citing DynaMITe
 
@@ -447,3 +451,8 @@ If you use our codebase then please cite the papers mentioned below.
       year={2023}
 }
 ```
+
+## Acknowledgement
+The main codebase is built on top of [detectron2](https://github.com/facebookresearch/detectron2) framework and is inspired from [Mask2Fromer](https://github.com/facebookresearch/Mask2Former).
+
+The Interactive segementation tool is modified from [RITM]( https://github.com/saic-vul/ritm_interactive_segmentation).
