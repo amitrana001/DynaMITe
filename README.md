@@ -281,13 +281,6 @@ You can find the model weights and evaluation results in the tables below. Altho
     </tbody>
 </table>
 
-## Reproducibility
-We train all the released checkpoints using a fixed seed, mentioned in the corresponding config files for each backbone. We use 16 GPUs with batch size of 32 and initial global learning rate of 0.0001 for training. Each GPU is an NVIDIA A100 Tensor Core GPU with 40 GB. The evaluation is also done on the same GPUs. 
-Note: different machines will exhibit distinct hardware and software stacks, potentially resulting in minute variations in the outcomes of floating-point operations.
-
-We train the Swin-Tiny model 3 times with different seeds during training and observe the variance in evaluation metrics as follows:
-
-
 ## Installation
 
 See [Installation Instructions](assets/INSTALL.md).
@@ -298,6 +291,137 @@ See [Preparing Datasets for DynaMITe](assets/DATASETS.md).
 ## <a name="GettingStarted"></a>Getting Started
 
 See [Training and Evaluation](assets/GETTING_STARTED.md).
+
+## Reproducibility
+We train all the released checkpoints using a fixed seed, mentioned in the corresponding config files for each backbone. We use 16 GPUs with batch size of 32 and initial global learning rate of 0.0001 for training. Each GPU is an NVIDIA A100 Tensor Core GPU with 40 GB. The evaluation is also done on the same GPUs. <br>
+Note: different machines will exhibit distinct hardware and software stacks, potentially resulting in minute variations in the outcomes of floating-point operations.
+
+We train the Swin-Tiny model 3 times with different seeds during training and observe the variance in evaluation metrics as follows:
+
+<table>
+    <thead align="center">
+        <tr>
+            <th align="center", colspan="14">Multi-instance Interactive Segmentation</th>
+        </tr>
+        <tr>
+            <th rowspan="2">Model</th>
+            <th rowspan="2">Best <br>Strategy</th>
+            <th colspan="4">COCO</th>
+            <th colspan="4">SBD</th>    
+            <th colspan="4">DAVIS</th>
+        </tr>
+        <tr>
+            <td>NCI<br>85%</td>
+            <td>NFO<br>85%</td>
+            <td>NFI<br>85%</td>
+            <td>mIoU<br>85%</td>
+            <td>NCI<br>85%</td>
+            <td>NFO<br>85%</td>
+            <td>NFI<br>85%</td>
+            <td>mIoU<br>85%</td>
+            <td>NCI<br>85%</td>
+            <td>NFO<br>85%</td>
+            <td>NFI<br>85%</td>
+            <td>mIoU<br>85%</td>
+        </tr>
+    </thead>
+    <tbody align="center">
+        <tr>
+            <td align="left", rowspan="2">Swin-Tiny</td>
+            <td>mean</td>
+            <td>6.13</td>
+            <td>15219</td>
+            <td>2485</td>
+            <td>81.3</td>
+            <td>2.83</td>
+            <td>655</td>
+            <td>342</td>
+            <td>90.2</td>
+            <td>3.29</td>
+            <td>546</td>
+            <td>364</td>
+            <td>87.5</td>
+        </tr>
+        <tr>
+            <td>std</td>
+            <td>6.04</td>
+            <td>12986</td>
+            <td>2431</td>
+            <td>84.9</td>
+            <td>2.76</td>
+            <td>528</td>
+            <td>313</td>
+            <td>90.6</td>
+            <td>3.27</td>
+            <td>549</td>
+            <td>356</td>
+            <td>87.9</td>
+        </tr>
+    </tbody>
+</table>
+
+<table>
+    <thead align="center">
+        <tr>
+            <th align="center", colspan="13">Single-instance Interactive Segmentation</th>
+        </tr>
+        <tr>
+            <th rowspan="2">Model<br>Swin-Tiny</th>
+            <th colspan="2">GrabCut</th>
+            <th colspan="2">Berkeley</th>
+            <th colspan="2">SBD</th>    
+            <th colspan="2">DAVIS</th>
+            <th colspan="2">Pascal<br>VOC</th>
+            <th colspan="2">COCO<br>MVal</th>
+        </tr>
+        <tr>
+            <td>NoC<br>85%</td>
+            <td>NoC<br>90%</td>
+            <td>NoC<br>85%</td>
+            <td>NoC<br>90%</td>
+            <td>NoC<br>85%</td>
+            <td>NoC<br>90%</td>
+            <td>NoC<br>85%</td>
+            <td>NoC<br>90%</td>
+            <td>NoC<br>85%</td>
+            <td>NoC<br>90%</td>
+            <td>NoC<br>85%</td>
+            <td>NoC<br>90%</td>
+        </tr>
+    </thead>
+    <tbody align="center">
+        <tr>
+            <td align="left">mean</a></td>
+            <td>1.49</td>
+            <td>1.59</td>
+            <td>1.37</td>
+            <td>2.00</td>
+            <td>3.72</td>
+            <td>6.26</td>
+            <td>3.79</td>
+            <td>5.08</td>
+            <td>1.95</td>
+            <td>2.27</td>
+            <td>2.22</td>
+            <td>3.08</td>
+        </tr>
+        <tr>
+            <td align="left">std</a></td>
+            <td>0.05</td>
+            <td>0.08</td>
+            <td>0.04</td>
+            <td>0.11</td>
+            <td>0.04</td>
+            <td>0.01</td>
+            <td>0.10</td>
+            <td>0.10</td>
+            <td>0.03</td>
+            <td>0.02</td>
+            <td>0.08</td>
+            <td>0.09</td>
+        </tr>
+    </tbody>
+</table>
 
 ## Acknowledgement
 The main codebase is built on top of [detectron2](https://github.com/facebookresearch/detectron2) framework and is inspired from [Mask2Fromer](https://github.com/facebookresearch/Mask2Former).
