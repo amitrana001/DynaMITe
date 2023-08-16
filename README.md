@@ -12,7 +12,7 @@
 ## Interactive Segmentation Demo
 
 <div align="center">
-  <img src="https://github.com/amitrana001/DynaMITe/blob/final/assets/cakes.gif" width="420"/>
+  <img src="https://github.com/amitrana001/DynaMITe/blob/final/assets/cakes.gif" width="520"/>
 </div><br/>
 
 1. Pick a model and its config file from
