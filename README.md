@@ -16,7 +16,7 @@
 </div><br/>
 
 1. Pick a model and its config file from
-  [model zoo](assets/MODEL_ZOO.md),
+  model checkpoints,
   for example, `configs/coco_lvis/swin/dynamite_swin_tiny_bs32_ep50.yaml`.
 2. We provide `demo.py` that is able to demo builtin configs. Run it with:
 ```

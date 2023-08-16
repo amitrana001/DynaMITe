@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (c) Facebook, Inc. and its affiliates.
+#Adapted by Amit Rana from: https://github.com/facebookresearch/Mask2Former/blob/main/mask2former/config.py
 from detectron2.config import CfgNode as CN
 
 
@@ -54,28 +54,17 @@ def add_maskformer2_config(cfg):
     cfg.MODEL.MASK_FORMER.DECODER.DEC_LAYERS = 5
     cfg.MODEL.MASK_FORMER.DECODER.DEC_SCALE_FACTOR = 1.0
     # transformer config
-    # cfg.MODEL.MASK_FORMER.QUERY_INITIALIZER = "multi_scale" # OR single_scale
     cfg.MODEL.MASK_FORMER.NHEADS = 8
     cfg.MODEL.MASK_FORMER.DROPOUT = 0.1
     cfg.MODEL.MASK_FORMER.DIM_FEEDFORWARD = 2048
     cfg.MODEL.MASK_FORMER.ENC_LAYERS = 6
-    # cfg.MODEL.MASK_FORMER.DEC_LAYERS = 6
     cfg.MODEL.MASK_FORMER.PRE_NORM = False
 
     cfg.MODEL.MASK_FORMER.HIDDEN_DIM = 256
-    # cfg.MODEL.MASK_FORMER.NUM_OBJECT_QUERIES = 100
 
     cfg.MODEL.MASK_FORMER.TRANSFORMER_IN_FEATURE = "res5"
     cfg.MODEL.MASK_FORMER.ENFORCE_INPUT_PROJ = False
 
-    # mask_former inference config
-    # cfg.MODEL.MASK_FORMER.TEST = CN()
-    # cfg.MODEL.MASK_FORMER.TEST.SEMANTIC_ON = True
-    # cfg.MODEL.MASK_FORMER.TEST.INSTANCE_ON = False
-    # cfg.MODEL.MASK_FORMER.TEST.PANOPTIC_ON = False
-    # cfg.MODEL.MASK_FORMER.TEST.OBJECT_MASK_THRESHOLD = 0.0
-    # cfg.MODEL.MASK_FORMER.TEST.OVERLAP_THRESHOLD = 0.0
-    # cfg.MODEL.MASK_FORMER.TEST.SEM_SEG_POSTPROCESSING_BEFORE_INFERENCE = False
 
     # Sometimes `backbone.size_divisibility` is set to 0 for some backbone (e.g. ResNet)
     # you can use this config to override
@@ -148,8 +137,6 @@ def add_maskformer2_config(cfg):
     cfg.ITERATIVE.TRAIN.MAX_NUM_INTERACTIONS = 10
     cfg.ITERATIVE.TRAIN.STUFF_PROB = 0.15
 
-    # cfg.ITERATIVE.TRAIN.CLASS_AGNOSTIC = False
-
     cfg.ITERATIVE.TRAIN.USE_STATIC_BG_QUERIES = True    
     cfg.ITERATIVE.TRAIN.NUM_STATIC_BG_QUERIES = 9
 
@@ -158,14 +145,6 @@ def add_maskformer2_config(cfg):
     cfg.ITERATIVE.TEST.INTERACTIVE_EVALAUTION = False
     cfg.ITERATIVE.TEST.MAX_NUM_INTERACTIONS = 20
     cfg.ITERATIVE.TEST.IOU_THRESHOLD = 0.85
-
-    # # ______________________Reverse Cross Attn____________
-    # cfg.REVERSE_CROSS_ATTN =CN()
-    # cfg.REVERSE_CROSS_ATTN.USE_REVERSE_CROSS_ATTN = False
-    # cfg.REVERSE_CROSS_ATTN.USE_MLP_REV_ATTN = False
-    # cfg.REVERSE_CROSS_ATTN.NUM_LAYERS = 5
-    # cfg.REVERSE_CROSS_ATTN.SCALE_FACTOR = 1.0
-    # cfg.REVERSE_CROSS_ATTN.USE_ATTN_MASK = False
 
 def add_hrnet_config(cfg):
 
