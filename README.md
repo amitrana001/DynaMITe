@@ -282,6 +282,11 @@ You can find the model weights and evaluation results in the tables below. Altho
 </table>
 
 ## Reproducibility
+We train all the released checkpoints using a fixed seed, mentioned in the corresponding config files for each backbone. We use 16 GPUs with batch size of 32 and initial global learning rate of 0.0001 for training. Each GPU is an NVIDIA A100 Tensor Core GPU with 40 GB. The evaluation is also done on the same GPUs. 
+Note: different machines will exhibit distinct hardware and software stacks, potentially resulting in minute variations in the outcomes of floating-point operations.
+
+We train the Swin-Tiny model 3 times with different seeds during training and observe the variance in evaluation metrics as follows:
+
 
 ## Installation
 
