@@ -329,33 +329,33 @@ We train the Swin-Tiny model 3 times with different seeds during training and ob
         <tr>
             <td align="left", rowspan="2">Swin-Tiny</td>
             <td>mean</td>
-            <td>6.13</td>
-            <td>15219</td>
-            <td>2485</td>
-            <td>81.3</td>
-            <td>2.83</td>
-            <td>655</td>
-            <td>342</td>
-            <td>90.2</td>
-            <td>3.29</td>
-            <td>546</td>
-            <td>364</td>
-            <td>87.5</td>
+            <td>6.05</td>
+            <td>14845</td>
+            <td>2453</td>
+            <td>82.0</td>
+            <td>2.71</td>
+            <td>616</td>
+            <td>328</td>
+            <td>90.0</td>
+            <td>3.16</td>
+            <td>499</td>
+            <td>344</td>
+            <td>88.0</td>
         </tr>
         <tr>
             <td>std</td>
-            <td>6.04</td>
-            <td>12986</td>
-            <td>2431</td>
-            <td>84.9</td>
-            <td>2.76</td>
-            <td>528</td>
-            <td>313</td>
-            <td>90.6</td>
-            <td>3.27</td>
-            <td>549</td>
-            <td>356</td>
-            <td>87.9</td>
+            <td>0.006</td>
+            <td>56</td>
+            <td>6</td>
+            <td>0.0</td>
+            <td>0.006</td>
+            <td>5</td>
+            <td>2</td>
+            <td>0.0</td>
+            <td>0.023</td>
+            <td>8</td>
+            <td>5</td>
+            <td>0.0</td>
         </tr>
     </tbody>
 </table>
@@ -455,4 +455,4 @@ If you use our codebase then please cite the papers mentioned below.
 ## Acknowledgement
 The main codebase is built on top of [detectron2](https://github.com/facebookresearch/detectron2) framework and is inspired from [Mask2Fromer](https://github.com/facebookresearch/Mask2Former).
 
-The Interactive segementation tool is modified from [RITM]( https://github.com/saic-vul/ritm_interactive_segmentation).
+The interactive segementation demo tool is modified from [RITM]( https://github.com/saic-vul/ritm_interactive_segmentation).
