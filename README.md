@@ -6,13 +6,13 @@
 
 [[`Paper`](https://arxiv.org/pdf/2304.06668.pdf)] [[`ArXiv`](https://arxiv.org/abs/2304.06668)] [[`Project-Page`](https://sabarim.github.io/dynamite/)] [[`BibTeX`](#citing-segment-anything)]
 <div align="center">
-  <img src="https://github.com/amitrana001/DynaMITe/blob/final/assets/arch.png" width="100%" height="100%"/>
+  <img src="https://github.com/amitrana001/DynaMITe/blob/main/assets/arch.png" width="100%" height="100%"/>
 </div><br/>
 
 ## Interactive Segmentation Demo
 
 <div align="center">
-  <img src="https://github.com/amitrana001/DynaMITe/blob/final/assets/cakes.gif" width="100%", height="100%"/>
+  <img src="https://github.com/amitrana001/DynaMITe/blob/main/assets/cakes.gif" width="100%", height="100%"/>
 </div><br/>
 
 1. Pick a model and its config file from
