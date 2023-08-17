@@ -60,7 +60,7 @@ class COCOLVISDatasetMapper:
         """
         self.tfm_gens = tfm_gens
         logging.getLogger(__name__).info(
-            "[COCOInstanceInteractiveDatasetMapper] Full TransformGens used in training: {}".format(str(self.tfm_gens))
+            "[COCOLVISDatasetMapper] Full TransformGens used in training: {}".format(str(self.tfm_gens))
         )
 
         self.img_format = image_format
