@@ -55,7 +55,7 @@ class Clicker:
         self.ratio_w = self.trans_w/self.orig_w
         self.semantic_map = self.inputs[0]['semantic_map'].to('cpu')
 
-        self.not_clicked_map = np.ones_like(self.gt_masks[0], dtype=np.bool)
+        self.not_clicked_map = np.ones_like(self.gt_masks[0], dtype=np.bool_)
         if self.sampling_strategy == 0:
             for coords_list in self.inputs[0]['orig_fg_click_coords']:
                 for coords in coords_list:
