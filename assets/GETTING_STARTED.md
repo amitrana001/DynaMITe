@@ -33,13 +33,14 @@ To evaluate a model's performance, use
 ```
 python train_net.py \
   --config-file configs/coco_lvis/swin/dynamite_swin_tiny_bs32_ep50.yaml \
-  --eval-only MODEL.WEIGHTS /path/to/checkpoint_file \
+  --eval-only 
   --eval-datasets "(davis_2017_val,sbd_multi_insts)"
   --eval-strategy random
   --seed-id 1
   --max-interactions 10
   --iou-threshold 0.85
   --vis-path /path/to/save_visulization
+  MODEL.WEIGHTS /path/to/checkpoint_file 
 ```
 For more options, see `python train_net.py -h` and see  See [Preparing Datasets for DynaMITe](DATASETS.md) for more details about evaluation datsets.
 
