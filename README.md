@@ -4,7 +4,7 @@
 
 [Amit Kumar Rana](https://amitrana001.github.io/), [Sabarinath Mahadevan](https://www.vision.rwth-aachen.de/person/218/), [Alexander Hermans](https://www.vision.rwth-aachen.de/person/10/), [Bastian Leibe](https://www.vision.rwth-aachen.de/person/1/)
 
-[[`Paper`](https://arxiv.org/pdf/2304.06668.pdf)] [[`ArXiv`](https://arxiv.org/abs/2304.06668)] [[`Project-Page`](https://sabarim.github.io/dynamite/)] [[`BibTeX`](#citing-segment-anything)]
+[[`Paper`](https://arxiv.org/pdf/2304.06668.pdf)] [[`ArXiv`](https://arxiv.org/abs/2304.06668)] [[`Project-Page`](https://amitrana001.github.io/DynaMITe/)] [[`BibTeX`](#citing-dynamite))]
 <div align="center">
   <img src="https://github.com/amitrana001/DynaMITe/blob/main/assets/arch.png" width="100%" height="100%"/>
 </div><br/>
