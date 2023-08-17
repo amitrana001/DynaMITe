@@ -41,14 +41,14 @@ python train_net.py \
   --iou-threshold 0.85
   --vis-path /path/to/save_visulization
 ```
-For more options, see `python train_net.py -h`.
+For more options, see `python train_net.py -h` and see  See [Preparing Datasets for DynaMITe](DATASETS.md) for more details about evaluation datsets.
 
 <details>
 <summary><b>Evaluation argument options</b></summary>
 <ul>
     <!-- <li>Visualisation parameters</li> -->
     <!-- <ul> -->
-    <li><i>--eval-datasets: </i> Expect a list of names of registered datasets that you want your model to evaluate on. See [Preparing Datasets for DynaMITe](assets/DATASETS.md) for more details.Available options are:</li>
+    <li><i>--eval-datasets: </i> Expect a list of names of registered datasets that you want your model to evaluate on.Available options are:</li>
     Single-instnace datasets:
     <ul>
         <li><i>GrabCut</i></li>
