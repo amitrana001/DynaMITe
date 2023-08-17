@@ -35,7 +35,7 @@ def register_all_davis17(root):
         os.path.join(root, image_root),
         os.path.join(root, imset)
     )
-    print("davis_2017_val datset registered")
+    # print("davis_2017_val datset registered")
 
 def bbox_from_mask_np(mask, order='Y1Y2X1X2', return_none_if_invalid=False):
   if len(np.where(mask)[0]) == 0:
