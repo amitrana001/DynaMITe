@@ -270,7 +270,7 @@ class Clicker:
         if len(self.fg_orig_coords) and num_interactions:
             for j, fg_coords_per_mask in enumerate(self.fg_orig_coords):
                 for i, coords in enumerate(fg_coords_per_mask):
-                    color = np.array(color_map[total_colors-5*j-4], dtype=np.uint8)
+                    color = np.array(color_map[(total_colors-5*j-4)%total_colors], dtype=np.uint8)
                     color = (int (color[0]), int (color[1]), int (color[2])) 
                     image = cv2.circle(image, (int(coords[1]), int(coords[0])), click_radius, tuple(color), -1)
         
