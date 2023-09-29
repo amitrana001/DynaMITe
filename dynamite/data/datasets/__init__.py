@@ -1,5 +1,6 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 from . import (
+    register_sam_json,
     register_pascal_voc_single_inst,
     register_coco_lvis,
     register_berkeley,

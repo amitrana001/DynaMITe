@@ -34,7 +34,7 @@ from detectron2.solver.build import maybe_add_gradient_clipping
 from detectron2.utils.logger import setup_logger
 
 from dynamite import (
-    COCOLVISDatasetMapper, EvaluationDatasetMapper
+    COCOLVISDatasetMapper, EvaluationDatasetMapper, SamBaselineDatasetMapperJSON
 )
 
 from dynamite import (
@@ -60,6 +60,9 @@ class Trainer(DefaultTrainer):
         if datset_mapper_name == "coco_lvis":
             mapper = COCOLVISDatasetMapper(cfg,True)
             return build_detection_train_loader(cfg, mapper=mapper)
+        elif datset_mapper_name == "sam_train":
+            mapper = SamBaselineDatasetMapperJSON(cfg, True)
+            return build_detection_train_loader(cfg, mapper= mapper)
         else:
             mapper = None
             return build_detection_train_loader(cfg, mapper=mapper)
@@ -259,6 +262,11 @@ def setup(args):
 
 def main(args):
     
+    # import debugpy
+    # debugpy.listen(5678)
+    # print("Waiting for debugger")
+    # debugpy.wait_for_client()
+
     cfg = setup(args)
     if args.eval_only:
         model = Trainer.build_model(cfg)

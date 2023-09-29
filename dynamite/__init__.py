@@ -6,6 +6,7 @@ from . import modeling
 from .config import add_maskformer2_config, add_hrnet_config
 
 # dataset loading
+from .data.dataset_mappers.sam_baseline_dataset_mapper_json import SamBaselineDatasetMapperJSON
 from .data.dataset_mappers.coco_lvis_dataset_mapper import COCOLVISDatasetMapper
 from .data.dataset_mappers.evaluation_dataset_mapper import EvaluationDatasetMapper
 
